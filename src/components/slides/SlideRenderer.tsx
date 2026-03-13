@@ -154,7 +154,7 @@ function ElementRenderer({
   slide: SlideContent;
   assets: AssetItem[];
   isActive: boolean;
-  onClick?: () => void;
+  onClick?: (e?: React.MouseEvent) => void;
   activeElementId?: string | null;
   onElementClick?: (id: string) => void;
 }) {
@@ -278,7 +278,8 @@ function ElementRenderer({
               fontSize: el.fontSize ?? 24,
               fontWeight: el.fontWeight ?? 700,
               color: resolveColor(el.textColor, theme, slide) || color || primary,
-              background: el.backgroundGradient || resolveColor(el.backgroundColor, theme, slide) || secondary,
+              backgroundImage: el.backgroundGradient || undefined,
+              backgroundColor: !el.backgroundGradient ? (resolveColor(el.backgroundColor, theme, slide) || secondary) : undefined,
               borderRadius: el.borderRadius ?? theme.borderRadius,
               letterSpacing: el.letterSpacing ?? undefined,
               textTransform: el.textTransform ?? "none",
@@ -366,8 +367,8 @@ function ElementRenderer({
             padding: el.padding ?? 0,
             maxWidth: el.maxWidth ?? "100%",
             width: el.width ?? "100%",
-            background: el.backgroundGradient
-              || (el.backgroundColor ? resolveColor(el.backgroundColor, theme, slide) : undefined),
+            backgroundImage: el.backgroundGradient || undefined,
+            backgroundColor: !el.backgroundGradient && el.backgroundColor ? resolveColor(el.backgroundColor, theme, slide) : undefined,
             borderRadius: el.borderRadius ?? undefined,
             opacity: el.opacity ?? 1,
             ...spacing,
@@ -376,7 +377,7 @@ function ElementRenderer({
           }}
           onClick={(e) => {
             e.stopPropagation();
-            onClick?.();
+            onClick?.(e);
           }}
         >
           {groupChildren.map((child) => (
@@ -391,9 +392,7 @@ function ElementRenderer({
               onElementClick={onElementClick}
               onClick={
                 onElementClick
-                  ? () => {
-                      onElementClick(child.id);
-                    }
+                  ? (e?: React.MouseEvent) => { e?.stopPropagation(); onElementClick(child.id); }
                   : undefined
               }
             />
@@ -534,7 +533,7 @@ export const SlideRenderer = forwardRef<HTMLDivElement, SlideProps>(
     const containerStyle: React.CSSProperties = {
       width: size.width,
       height: size.height,
-      background: ss?.backgroundGradient || bg,
+      backgroundImage: ss?.backgroundGradient || undefined,
       backgroundColor: !ss?.backgroundGradient ? bg : undefined,
       fontFamily: resolveFont("body", theme) || theme.fontFamily,
       overflow: "hidden",
@@ -620,7 +619,7 @@ export const SlideRenderer = forwardRef<HTMLDivElement, SlideProps>(
               onElementClick={onElementClick}
               onClick={
                 onElementClick
-                  ? () => onElementClick(el.id)
+                  ? (e?: React.MouseEvent) => { e?.stopPropagation(); onElementClick(el.id); }
                   : undefined
               }
             />

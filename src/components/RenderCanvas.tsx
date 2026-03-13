@@ -24,7 +24,7 @@ export function RenderCanvas() {
   const activeElementId = useJsonvasStore((s) => s.activeElementId);
   const setActiveElement = useJsonvasStore((s) => s.setActiveElement);
   const slideRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  const [viewMode, setViewMode] = useState<ViewMode>("single");
+  const [viewMode, setViewMode] = useState<ViewMode>("vertical");
   const [zoomIdx, setZoomIdx] = useState(DEFAULT_ZOOM_INDEX);
   const canvasRef = useRef<HTMLDivElement>(null);
 
@@ -33,8 +33,6 @@ export function RenderCanvas() {
 
   const activeSlide = slides.find((s) => s.id === activeSlideId) ?? slides[0];
 
-  // Multi-view uses a smaller base scale
-  const multiBaseScale = 0.25;
 
   const zoomIn = useCallback(() => {
     setZoomIdx((i) => clamp(i + 1, 0, ZOOM_STEPS.length - 1));
@@ -223,8 +221,8 @@ export function RenderCanvas() {
                 <div
                   className={canvasStyles.stageWrapper}
                   style={{
-                    width: size.width * multiBaseScale * zoom,
-                    height: size.height * multiBaseScale * zoom,
+                    width: size.width * zoom,
+                    height: size.height * zoom,
                   }}
                 >
                   <div
@@ -232,7 +230,7 @@ export function RenderCanvas() {
                     style={{
                       width: size.width,
                       height: size.height,
-                      transform: `scale(${multiBaseScale * zoom})`,
+                      transform: `scale(${zoom})`,
                     }}
                   >
                     <SlideRenderer

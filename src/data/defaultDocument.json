@@ -1,0 +1,281 @@
+{
+  "documentSize": {
+    "width": 1080,
+    "height": 1350,
+    "label": "Portrait (1080×1350)"
+  },
+  "assets": {
+    "items": [
+      {
+        "id": "logo-main",
+        "label": "Jsonvas Logo",
+        "data": "",
+        "tintable": true
+      }
+    ]
+  },
+  "theme": {
+    "backgroundColor": "#0d1117",
+    "primaryColor": "#e6edf3",
+    "secondaryColor": "#8a2be2",
+    "fontFamily": "Inter, sans-serif",
+    "fonts": [
+      {
+        "id": "header",
+        "label": "Header",
+        "value": "Space Grotesk, sans-serif"
+      },
+      {
+        "id": "body",
+        "label": "Body",
+        "value": "Inter, sans-serif"
+      },
+      {
+        "id": "code",
+        "label": "Code",
+        "value": "JetBrains Mono, monospace"
+      }
+    ],
+    "fontSize": 18,
+    "fontWeight": 400,
+    "borderRadius": 16,
+    "palette": [
+      {
+        "id": "accent-blue",
+        "label": "Accent Blue",
+        "value": "#2f81f7"
+      }
+    ]
+  },
+  "content": {
+    "slides": [
+      {
+        "id": "sl_intro01",
+        "alignItems": "center",
+        "justifyContent": "center",
+        "direction": "column",
+        "padding": 80,
+        "gap": 32,
+        "style": {
+          "backgroundGradient": "radial-gradient(circle at 50% 0%, #1f2937 0%, #0d1117 80%)"
+        },
+        "elements": [
+          {
+            "id": "el_icon01",
+            "type": "icon",
+            "iconName": "code",
+            "iconSize": 64,
+            "color": "secondary"
+          },
+          {
+            "id": "el_text01",
+            "type": "text",
+            "content": "Meet Jsonvas.",
+            "fontId": "header",
+            "fontSize": 72,
+            "fontWeight": 800,
+            "textAlign": "center",
+            "letterSpacing": -2,
+            "lineHeight": 1.1,
+            "color": "primary"
+          },
+          {
+            "id": "el_text02",
+            "type": "text",
+            "content": "The standard translation layer between LLM intent and structured visual design.",
+            "fontId": "body",
+            "fontSize": 26,
+            "fontWeight": 400,
+            "textAlign": "center",
+            "lineHeight": 1.5,
+            "color": "#8b949e",
+            "maxWidth": "90%"
+          }
+        ]
+      },
+      {
+        "id": "sl_prob02",
+        "alignItems": "flex-start",
+        "justifyContent": "center",
+        "direction": "column",
+        "padding": 100,
+        "gap": 40,
+        "elements": [
+          {
+            "id": "el_icon02",
+            "type": "icon",
+            "iconName": "alert-triangle",
+            "iconSize": 48,
+            "color": "accent-blue"
+          },
+          {
+            "id": "el_text03",
+            "type": "text",
+            "content": "The Gap",
+            "fontId": "code",
+            "fontSize": 20,
+            "fontWeight": 600,
+            "textTransform": "uppercase",
+            "letterSpacing": 2,
+            "color": "accent-blue"
+          },
+          {
+            "id": "el_text04",
+            "type": "text",
+            "content": "LLMs are excellent at generating structured data, but they cannot directly render beautiful, brand-aligned interfaces.",
+            "fontId": "header",
+            "fontSize": 42,
+            "fontWeight": 600,
+            "lineHeight": 1.3,
+            "color": "primary"
+          },
+          {
+            "id": "el_text05",
+            "type": "text",
+            "content": "Agents need a programmatic, pure-data approach to build UIs autonomously without relying on Markdown limitations or heavy visual editors.",
+            "fontId": "body",
+            "fontSize": 24,
+            "lineHeight": 1.6,
+            "color": "#8b949e"
+          }
+        ]
+      },
+      {
+        "id": "sl_sol03",
+        "alignItems": "center",
+        "justifyContent": "center",
+        "direction": "column",
+        "padding": 80,
+        "gap": 48,
+        "elements": [
+          {
+            "id": "el_text06",
+            "type": "text",
+            "content": "How It Works",
+            "fontId": "header",
+            "fontSize": 56,
+            "fontWeight": 800,
+            "textAlign": "center",
+            "color": "primary"
+          },
+          {
+            "id": "el_list01",
+            "type": "list",
+            "content": "Define global themes & upload core assets\nMap headings and layouts into strict JSON\nEngine renders Next.js components dynamically\nExport directly to social-ready images\nFeed JSON back to AI for instant iteration",
+            "fontId": "body",
+            "fontSize": 24,
+            "fontWeight": 500,
+            "lineHeight": 1.8,
+            "color": "#e6edf3"
+          }
+        ]
+      },
+      {
+        "id": "sl_tech04",
+        "alignItems": "flex-start",
+        "justifyContent": "center",
+        "direction": "column",
+        "padding": 100,
+        "gap": 32,
+        "style": {
+          "backgroundColor": "#161b22"
+        },
+        "elements": [
+          {
+            "id": "el_icon03",
+            "type": "icon",
+            "iconName": "terminal",
+            "iconSize": 48,
+            "color": "secondary"
+          },
+          {
+            "id": "el_text07",
+            "type": "text",
+            "content": "Architected for scale.",
+            "fontId": "header",
+            "fontSize": 48,
+            "fontWeight": 700,
+            "lineHeight": 1.2,
+            "color": "primary"
+          },
+          {
+            "id": "el_divider01",
+            "type": "divider",
+            "color": "secondary",
+            "opacity": 0.5,
+            "maxWidth": "100px"
+          },
+          {
+            "id": "el_text08",
+            "type": "text",
+            "content": "Built on the Next.js App Router using custom styling architecture. We maintain strict programmatic control over design tokens by entirely avoiding utility-class bloat.",
+            "fontId": "body",
+            "fontSize": 26,
+            "lineHeight": 1.5,
+            "color": "#8b949e"
+          }
+        ]
+      },
+      {
+        "id": "sl_cta05",
+        "alignItems": "center",
+        "justifyContent": "center",
+        "direction": "column",
+        "padding": 80,
+        "gap": 32,
+        "style": {
+          "backgroundGradient": "radial-gradient(circle at 50% 100%, #2f81f7 0%, #0d1117 80%)"
+        },
+        "elements": [
+          {
+            "id": "el_icon04",
+            "type": "icon",
+            "iconName": "rocket",
+            "iconSize": 64,
+            "color": "primary"
+          },
+          {
+            "id": "el_text09",
+            "type": "text",
+            "content": "Join the Movement",
+            "fontId": "header",
+            "fontSize": 56,
+            "fontWeight": 800,
+            "textAlign": "center",
+            "lineHeight": 1.1,
+            "color": "primary"
+          },
+          {
+            "id": "el_text10",
+            "type": "text",
+            "content": "Help us build the common language for agents to build, modify, and iterate on visual documents.",
+            "fontId": "body",
+            "fontSize": 24,
+            "textAlign": "center",
+            "lineHeight": 1.5,
+            "color": "#8b949e",
+            "maxWidth": "80%"
+          },
+          {
+            "id": "el_spacer01",
+            "type": "spacer",
+            "height": "20px"
+          },
+          {
+            "id": "el_button01",
+            "type": "button",
+            "content": "Star on GitHub",
+            "fontId": "body",
+            "fontSize": 20,
+            "fontWeight": 600,
+            "backgroundColor": "primary",
+            "textColor": "#0d1117",
+            "paddingX": 32,
+            "paddingY": 16,
+            "borderRadius": 8
+          }
+        ]
+      }
+    ]
+  }
+}

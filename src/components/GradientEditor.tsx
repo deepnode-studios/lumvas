@@ -13,9 +13,13 @@ interface GradientStop {
   position: number; // 0–100
 }
 
+type RadialShape = "circle" | "ellipse";
+
 interface ParsedGradient {
   type: "linear" | "radial";
   angle: number;
+  radialShape: RadialShape;
+  radialPosition: string; // e.g. "center", "50% 100%", "top left"
   stops: GradientStop[];
 }
 
@@ -25,6 +29,8 @@ function parseGradient(css: string): ParsedGradient {
   const fallback: ParsedGradient = {
     type: "linear",
     angle: 135,
+    radialShape: "circle",
+    radialPosition: "center",
     stops: [
       { color: "#667eea", position: 0 },
       { color: "#764ba2", position: 100 },
@@ -60,6 +66,8 @@ function parseGradient(css: string): ParsedGradient {
 
   // First part might be angle/shape or a color stop
   let angle = 135;
+  let radialShape: RadialShape = "circle";
+  let radialPosition = "center";
   let stopParts = parts;
 
   if (!isRadial) {
@@ -85,14 +93,19 @@ function parseGradient(css: string): ParsedGradient {
       stopParts = parts.slice(1);
     }
   } else {
-    // Radial: skip shape part (e.g. "circle", "ellipse", "circle at center")
-    const first = parts[0].toLowerCase();
-    if (
-      first.startsWith("circle") ||
-      first.startsWith("ellipse") ||
-      first.startsWith("closest") ||
-      first.startsWith("farthest")
-    ) {
+    // Radial: parse shape and position (e.g. "circle at 50% 100%", "ellipse at center")
+    const first = parts[0].trim();
+    const isShapePart =
+      /^(circle|ellipse|closest|farthest)/i.test(first) ||
+      /^at\s+/i.test(first);
+    if (isShapePart) {
+      const atMatch = first.match(/^(circle|ellipse)?\s*at\s+(.+)$/i);
+      if (atMatch) {
+        radialShape = (atMatch[1]?.toLowerCase() as RadialShape) || "circle";
+        radialPosition = atMatch[2].trim();
+      } else {
+        radialShape = first.toLowerCase().startsWith("ellipse") ? "ellipse" : "circle";
+      }
       stopParts = parts.slice(1);
     }
   }
@@ -117,7 +130,7 @@ function parseGradient(css: string): ParsedGradient {
 
   if (stops.length < 2) return fallback;
 
-  return { type, angle, stops };
+  return { type, angle, radialShape, radialPosition, stops };
 }
 
 function buildGradient(parsed: ParsedGradient): string {
@@ -126,7 +139,8 @@ function buildGradient(parsed: ParsedGradient): string {
     .join(", ");
 
   if (parsed.type === "radial") {
-    return `radial-gradient(circle, ${stopsStr})`;
+    const pos = parsed.radialPosition || "center";
+    return `radial-gradient(${parsed.radialShape} at ${pos}, ${stopsStr})`;
   }
   return `linear-gradient(${parsed.angle}deg, ${stopsStr})`;
 }
@@ -346,6 +360,38 @@ export function GradientEditor({ value, onChange }: GradientEditorProps) {
                 <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>
                   deg
                 </span>
+              </div>
+            </div>
+          )}
+
+          {parsed.type === "radial" && (
+            <div className={g.section}>
+              <span className={g.sectionLabel}>Shape</span>
+              <div className={g.row}>
+                <select
+                  value={parsed.radialShape}
+                  onChange={(e) => update({ radialShape: e.target.value as RadialShape })}
+                >
+                  <option value="circle">Circle</option>
+                  <option value="ellipse">Ellipse</option>
+                </select>
+              </div>
+              <span className={g.sectionLabel} style={{ marginTop: 6 }}>Position</span>
+              <div className={g.row}>
+                <select
+                  value={parsed.radialPosition}
+                  onChange={(e) => update({ radialPosition: e.target.value })}
+                >
+                  <option value="center">Center</option>
+                  <option value="50% 0%">Top</option>
+                  <option value="100% 0%">Top Right</option>
+                  <option value="100% 50%">Right</option>
+                  <option value="100% 100%">Bottom Right</option>
+                  <option value="50% 100%">Bottom</option>
+                  <option value="0% 100%">Bottom Left</option>
+                  <option value="0% 50%">Left</option>
+                  <option value="0% 0%">Top Left</option>
+                </select>
               </div>
             </div>
           )}

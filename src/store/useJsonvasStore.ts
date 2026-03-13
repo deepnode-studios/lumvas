@@ -434,12 +434,9 @@ function getElementContext(
 
 /* ─── Default document ─── */
 
-const DEFAULT_DOC: JsonvasDocument = {
-  documentSize: DOCUMENT_SIZES[0],
-  assets: { items: [] },
-  theme: DEFAULT_THEME,
-  content: { slides: [createTitleSlide()] },
-};
+import defaultDocJson from "@/data/defaultDocument.json";
+
+const DEFAULT_DOC: JsonvasDocument = defaultDocJson as unknown as JsonvasDocument;
 
 /* ─── Store ─── */
 
