@@ -1,0 +1,303 @@
+.assetList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ─── Card ─── */
+
+.assetCard {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--input-border);
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+
+.assetCard:hover {
+  border-color: var(--accent);
+}
+
+/* Preview area */
+.assetPreview {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: repeating-conic-gradient(#f0f0f3 0% 25%, #fafafa 0% 50%) 0 0 / 16px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.assetImg {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.assetEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+}
+
+.emptyIcon {
+  font-size: 28px;
+  opacity: 0.3;
+}
+
+.emptyText {
+  font-size: 12px;
+}
+
+.replaceOverlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+  pointer-events: none;
+}
+
+.assetPreview:hover .replaceOverlay {
+  opacity: 1;
+}
+
+.replaceLabel {
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.15);
+  padding: 6px 16px;
+  border-radius: 8px;
+  backdrop-filter: blur(4px);
+}
+
+/* Body */
+.assetBody {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Display mode */
+.assetHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.assetMeta {
+  flex: 1;
+  min-width: 0;
+}
+
+.assetLabel {
+  font-size: 14px;
+  font-weight: 600;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.assetDesc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  margin-top: 2px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.assetDescEmpty {
+  font-size: 12px;
+  color: var(--text-secondary);
+  opacity: 0.4;
+  font-style: italic;
+  margin-top: 2px;
+}
+
+.assetId {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--accent);
+  background: rgba(0, 113, 227, 0.06);
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-top: 4px;
+  user-select: all;
+}
+
+/* Edit mode */
+.editFields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fieldLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.inlineInput {
+  padding: 6px 10px;
+  font-size: 13px;
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  background: var(--input-bg);
+  outline: none;
+  width: 100%;
+  transition: border-color 0.15s;
+}
+
+.inlineInput:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(0, 113, 227, 0.1);
+}
+
+/* Actions */
+.assetActions {
+  display: flex;
+  gap: 6px;
+  padding-top: 4px;
+  border-top: 1px solid var(--panel-border);
+}
+
+.actionBtn {
+  flex: 1;
+  padding: 6px 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.12s;
+}
+
+.actionBtn:hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--text-primary);
+}
+
+.actionBtnDanger:hover {
+  background: rgba(255, 59, 48, 0.08);
+  color: var(--danger);
+}
+
+/* ─── Empty state ─── */
+
+.emptyState {
+  text-align: center;
+  padding: 24px 16px;
+  border: 2px dashed var(--input-border);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.emptyState:hover {
+  border-color: var(--accent);
+  background: rgba(0, 113, 227, 0.03);
+}
+
+.emptyStateIcon {
+  font-size: 32px;
+  opacity: 0.25;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.emptyStateText {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* ─── Add buttons ─── */
+
+.addRow {
+  display: flex;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.addBtn {
+  flex: 1;
+  padding: 10px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  background: rgba(0, 113, 227, 0.06);
+  border: 1px dashed rgba(0, 113, 227, 0.2);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.addBtn:hover {
+  background: rgba(0, 113, 227, 0.1);
+  border-color: var(--accent);
+}
+
+/* ─── Tintable toggle ─── */
+
+.toggleRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.toggleRow input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.toggleLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.toggleHint {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.tintBadge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--accent);
+  background: rgba(0, 113, 227, 0.08);
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+}

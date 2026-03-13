@@ -1,0 +1,267 @@
+.container {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 8px;
+  font-size: 12px;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.trigger:hover,
+.trigger:focus {
+  border-color: var(--accent);
+}
+
+.gradientSwatch {
+  width: 32px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  flex-shrink: 0;
+}
+
+.label {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-primary);
+  font-size: 11px;
+}
+
+.chevron {
+  font-size: 8px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+/* ── Popover ── */
+
+.popover {
+  position: fixed;
+  min-width: 260px;
+  max-height: 420px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  z-index: 9999;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Preview bar */
+.preview {
+  width: 100%;
+  height: 32px;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+/* Sections */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sectionLabel {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-secondary);
+}
+
+/* Type / Angle row */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.row select,
+.row input[type="number"] {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+  font-size: 12px;
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  background: var(--input-bg);
+  outline: none;
+}
+
+.row select:focus,
+.row input[type="number"]:focus {
+  border-color: var(--accent);
+}
+
+.rowLabel {
+  font-size: 11px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  width: 42px;
+}
+
+/* ── Angle dial ── */
+
+.angleDial {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 2px solid var(--input-border);
+  background: var(--input-bg);
+  cursor: pointer;
+  flex-shrink: 0;
+  touch-action: none;
+}
+
+.angleNeedle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2px;
+  height: 40%;
+  background: var(--accent);
+  border-radius: 1px;
+  transform-origin: bottom center;
+  pointer-events: none;
+  margin-left: -1px;
+  margin-top: -40%;
+}
+
+.angleDot {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  pointer-events: none;
+  top: 3px;
+  left: 50%;
+  margin-left: -4px;
+  transform-origin: 4px calc(50% - 3px);
+}
+
+/* ── Color stops ── */
+
+.stopRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stopColor {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 2px solid var(--input-border);
+  border-radius: 6px;
+  cursor: pointer;
+  background: none;
+  flex-shrink: 0;
+}
+
+.stopPos {
+  width: 52px;
+  padding: 4px 6px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  background: var(--input-bg);
+  outline: none;
+  text-align: center;
+}
+
+.stopPos:focus {
+  border-color: var(--accent);
+}
+
+.stopSlider {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+  height: 4px;
+}
+
+.stopRemove {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-secondary);
+  background: none;
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.stopRemove:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.addStopBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--accent);
+  background: rgba(0, 113, 227, 0.06);
+  border: 1px dashed rgba(0, 113, 227, 0.3);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.addStopBtn:hover {
+  background: rgba(0, 113, 227, 0.12);
+}
+
+/* Presets */
+.presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.presetSwatch {
+  width: 28px;
+  height: 20px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+
+.presetSwatch:hover {
+  transform: scale(1.15);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}

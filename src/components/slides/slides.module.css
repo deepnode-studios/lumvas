@@ -1,0 +1,45 @@
+.element {
+  position: relative;
+  cursor: default;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.imagePlaceholder {
+  background: rgba(0, 0, 0, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #999;
+  font-size: 18px;
+}
+
+.bulletList {
+  list-style: none;
+  padding: 0;
+  width: 100%;
+}
+
+.bulletItem {
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.bulletItem::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--dot-color, #e94560);
+  flex-shrink: 0;
+}
+
+.divider {
+  border: none;
+  border-top: 2px solid;
+  width: 100%;
+  margin: 0;
+}
