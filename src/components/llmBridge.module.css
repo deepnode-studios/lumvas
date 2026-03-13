@@ -101,3 +101,19 @@
   justify-content: flex-end;
   gap: 8px;
 }
+
+.exportMenuItem {
+  display: block;
+  width: 100%;
+  padding: 8px 14px;
+  border: none;
+  background: none;
+  text-align: left;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.exportMenuItem:hover {
+  background: var(--bg-panel, #f5f5f5);
+}

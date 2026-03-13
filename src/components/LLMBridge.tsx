@@ -122,21 +122,36 @@ export function LLMBridge() {
   const getDocument = useJsonvasStore((s) => s.getDocument);
   const importDocument = useJsonvasStore((s) => s.importDocument);
   const [open, setOpen] = useState(false);
+  const [exportMenu, setExportMenu] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
   const [tab, setTab] = useState<EditorTab>("content");
   const [jsonText, setJsonText] = useState("");
   const [parseError, setParseError] = useState("");
   const [copyLabel, setCopyLabel] = useState("Copy for LLM");
   const suppressSync = useRef(false);
+  const editorFocused = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  // Sync store → textarea (when store changes externally)
+  // Sync store → textarea (when store changes externally, NOT while user is editing)
   const storeSlice = getSlice(getDocument(), tab);
   useEffect(() => {
-    if (!suppressSync.current) {
+    if (!suppressSync.current && !editorFocused.current) {
       setJsonText(storeSlice);
       setParseError("");
     }
   }, [storeSlice]);
+
+  // Close export menu on outside click
+  useEffect(() => {
+    if (!exportMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setExportMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [exportMenu]);
 
   // When switching tabs, immediately sync
   const switchTab = useCallback(
@@ -346,26 +361,12 @@ ${JSON.stringify(stripped, null, 2)}
     setTimeout(() => setCopyLabel("Copy for LLM"), 1500);
   };
 
-  const handleExport = async () => {
-    const { toPng } = await import("html-to-image");
-    const { default: JSZip } = await import("jszip");
-    // file-saver may export saveAs at different paths depending on bundler
-    const fileSaver = await import("file-saver");
-    const saveAs =
-      fileSaver.saveAs ??
-      (fileSaver as unknown as { default: typeof fileSaver }).default?.saveAs ??
-      (fileSaver as unknown as { default: Function }).default;
-
-    const container = document.getElementById("export-slides");
-    if (!container) return;
-
-    // Inject cross-origin stylesheets (Google Fonts) as same-origin <style> tags
-    // so html-to-image can read their cssRules and properly embed fonts as data URIs.
-    // Without this, the library throws "Cannot access rules" on cross-origin sheets.
-    const injectedStyles: HTMLStyleElement[] = [];
+  /** Inject cross-origin stylesheets as same-origin <style> so html-to-image can read cssRules */
+  const injectCrossOriginCSS = async () => {
+    const injected: HTMLStyleElement[] = [];
     for (const sheet of Array.from(document.styleSheets)) {
       try {
-        sheet.cssRules; // Test access — throws for cross-origin
+        sheet.cssRules;
       } catch {
         if (sheet.href) {
           try {
@@ -374,45 +375,114 @@ ${JSON.stringify(stripped, null, 2)}
             style.textContent = css;
             style.setAttribute("data-export-injected", "true");
             document.head.appendChild(style);
-            injectedStyles.push(style);
-            // Disable the original cross-origin link to avoid the error
+            injected.push(style);
             (sheet.ownerNode as HTMLLinkElement)?.setAttribute("data-export-disabled", "true");
             (sheet.ownerNode as HTMLLinkElement).disabled = true;
-          } catch {
-            // Skip unreachable sheets
-          }
+          } catch { /* skip */ }
         }
       }
     }
+    return injected;
+  };
 
-    try {
-    const slideEls = container.children;
-    const zip = new JSZip();
-
-    for (let i = 0; i < slideEls.length; i++) {
-      const el = slideEls[i] as HTMLElement;
-      const doc = getDocument();
-      const dataUrl = await toPng(el, {
-        width: doc.documentSize.width,
-        height: doc.documentSize.height,
-        pixelRatio: 2,
-      });
-      const resp = await fetch(dataUrl);
-      const blob = await resp.blob();
-      zip.file(`slide-${i + 1}.png`, blob);
+  const cleanupInjectedCSS = (injected: HTMLStyleElement[]) => {
+    for (const s of injected) s.remove();
+    for (const link of document.querySelectorAll<HTMLLinkElement>("[data-export-disabled]")) {
+      link.disabled = false;
+      link.removeAttribute("data-export-disabled");
     }
+  };
 
-    const zipBlob = await zip.generateAsync({ type: "blob" });
-    saveAs(zipBlob, "jsonvas-carousel.zip");
+  /** Capture all export slides as data URLs */
+  const captureSlides = async (toPng: (el: HTMLElement, opts: Record<string, unknown>) => Promise<string>) => {
+    const container = document.getElementById("export-slides");
+    if (!container) return [];
+    const doc = getDocument();
+    const w = doc.documentSize.width;
+    const h = doc.documentSize.height;
+    const results: string[] = [];
+    for (let i = 0; i < container.children.length; i++) {
+      const el = container.children[i] as HTMLElement;
+      const dataUrl = await toPng(el, { width: w, height: h, pixelRatio: 2 });
+      results.push(dataUrl);
+    }
+    return results;
+  };
+
+  const getSaveAs = async () => {
+    const fileSaver = await import("file-saver");
+    return (
+      fileSaver.saveAs ??
+      (fileSaver as unknown as { default: typeof fileSaver }).default?.saveAs ??
+      (fileSaver as unknown as { default: Function }).default
+    );
+  };
+
+  const handleExport = async () => {
+    const { toPng } = await import("html-to-image");
+    const { default: JSZip } = await import("jszip");
+    const saveAs = await getSaveAs();
+    const injected = await injectCrossOriginCSS();
+    try {
+      const dataUrls = await captureSlides(toPng);
+      const zip = new JSZip();
+      for (let i = 0; i < dataUrls.length; i++) {
+        const resp = await fetch(dataUrls[i]);
+        zip.file(`slide-${i + 1}.png`, await resp.blob());
+      }
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      saveAs(zipBlob, "jsonvas-carousel.zip");
     } finally {
-      // Restore original cross-origin sheets and remove injected copies
-      for (const style of injectedStyles) {
-        style.remove();
+      cleanupInjectedCSS(injected);
+    }
+  };
+
+  const handleMergeExport = async (direction: "horizontal" | "vertical") => {
+    const { toPng } = await import("html-to-image");
+    const saveAs = await getSaveAs();
+    const injected = await injectCrossOriginCSS();
+    try {
+      const dataUrls = await captureSlides(toPng);
+      if (dataUrls.length === 0) return;
+
+      // Load all images
+      const images = await Promise.all(
+        dataUrls.map(
+          (url) =>
+            new Promise<HTMLImageElement>((resolve, reject) => {
+              const img = new Image();
+              img.onload = () => resolve(img);
+              img.onerror = reject;
+              img.src = url;
+            })
+        )
+      );
+
+      const doc = getDocument();
+      const sw = doc.documentSize.width * 2; // pixelRatio 2
+      const sh = doc.documentSize.height * 2;
+
+      const canvas = document.createElement("canvas");
+      if (direction === "horizontal") {
+        canvas.width = sw * images.length;
+        canvas.height = sh;
+      } else {
+        canvas.width = sw;
+        canvas.height = sh * images.length;
       }
-      for (const link of document.querySelectorAll<HTMLLinkElement>("[data-export-disabled]")) {
-        link.disabled = false;
-        link.removeAttribute("data-export-disabled");
+
+      const ctx = canvas.getContext("2d")!;
+      for (let i = 0; i < images.length; i++) {
+        const x = direction === "horizontal" ? sw * i : 0;
+        const y = direction === "vertical" ? sh * i : 0;
+        ctx.drawImage(images[i], x, y, sw, sh);
       }
+
+      canvas.toBlob((blob) => {
+        if (blob) saveAs(blob, `jsonvas-merged-${direction}.png`);
+      }, "image/png");
+    } finally {
+      cleanupInjectedCSS(injected);
     }
   };
 
@@ -431,9 +501,48 @@ ${JSON.stringify(stripped, null, 2)}
             {parseError}
           </span>
         )}
-        <button className={styles.btnSecondary} onClick={handleExport}>
-          Download
-        </button>
+        <div style={{ position: "relative" }}>
+          <button className={styles.btnSecondary} onClick={() => setExportMenu((v) => !v)}>
+            Export ▾
+          </button>
+          {exportMenu && (
+            <div
+              ref={exportMenuRef}
+              style={{
+                position: "absolute",
+                top: "100%",
+                right: 0,
+                marginTop: 4,
+                background: "#fff",
+                border: "1px solid var(--input-border)",
+                borderRadius: 8,
+                boxShadow: "0 4px 16px rgba(0,0,0,.12)",
+                zIndex: 100,
+                minWidth: 180,
+                overflow: "hidden",
+              }}
+            >
+              <button
+                className={b.exportMenuItem}
+                onClick={() => { setExportMenu(false); handleExport(); }}
+              >
+                Download ZIP
+              </button>
+              <button
+                className={b.exportMenuItem}
+                onClick={() => { setExportMenu(false); handleMergeExport("horizontal"); }}
+              >
+                Merge Horizontal
+              </button>
+              <button
+                className={b.exportMenuItem}
+                onClick={() => { setExportMenu(false); handleMergeExport("vertical"); }}
+              >
+                Merge Vertical
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     );
   }
@@ -466,7 +575,18 @@ ${JSON.stringify(stripped, null, 2)}
           </button>
         </div>
 
-        <JsonEditor value={jsonText} onChange={handleChange} />
+        <JsonEditor
+          value={jsonText}
+          onChange={handleChange}
+          onFocus={() => { editorFocused.current = true; }}
+          onBlur={() => {
+            editorFocused.current = false;
+            // Sync store → textarea on blur to pick up any external changes
+            const fresh = getSlice(getDocument(), tab);
+            setJsonText(fresh);
+            setParseError("");
+          }}
+        />
 
         <div className={b.actions}>
           <button className={styles.btnSecondary} onClick={handleCopy}>

@@ -71,8 +71,9 @@ export function RenderCanvas() {
         e.preventDefault();
         setZoomIdx(ZOOM_STEPS.indexOf(1));
       }
-      // Arrow left / right to navigate slides (no modifier)
-      if (!mod && !e.shiftKey && !e.altKey) {
+      // Arrow left / right to navigate slides (no modifier, not in an input)
+      const tag = (e.target as HTMLElement).tagName;
+      if (!mod && !e.shiftKey && !e.altKey && tag !== "INPUT" && tag !== "TEXTAREA" && tag !== "SELECT") {
         if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
           const idx = slides.findIndex((s) => s.id === activeSlideId);
           if (idx > 0) {

@@ -10,6 +10,13 @@
 
 ---
 
+<div align="center">
+  <br/>
+  <img src="docs/sample-output.png" alt="Sample carousel created entirely by Jsonvas — no human modification" width="100%" />
+  <p><i>This carousel was created entirely by Jsonvas from LLM-generated JSON — zero manual design work, zero human modification.</i></p>
+  <br/>
+</div>
+
 ## What is Jsonvas?
 
 LLMs are great at generating structured data but can't directly render polished, brand-aligned visuals. **Jsonvas** bridges that gap — it's an open-source rendering engine and visual builder that takes a strict JSON schema (from an AI or a human) and turns it into pixel-perfect, exportable visual documents.
@@ -84,6 +91,7 @@ Jsonvas is in active development. The first domain — **Social Media Carousels*
 
 **Export**
 - Download all slides as high-res PNGs (2x pixel ratio) bundled in a ZIP
+- Merge export: stitch all slides into a single image (horizontal or vertical)
 - Handles Google Fonts embedding for offline-accurate renders
 
 ### Tech Stack
