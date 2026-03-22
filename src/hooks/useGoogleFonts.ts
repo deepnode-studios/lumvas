@@ -51,7 +51,7 @@ export function useGoogleFonts() {
     for (const family of families) {
       loadedRef.current.add(family);
 
-      const linkId = `gfont-${family.replace(/\s+/g, "-").toLowerCase()}`;
+      const linkId = `gfont-${family.replace(/\s+/g, "-").toLocaleLowerCase('en-US')}`;
       if (document.getElementById(linkId)) continue;
 
       const link = document.createElement("link");

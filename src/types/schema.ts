@@ -183,6 +183,7 @@ export interface ContentNode {
 
 export interface JsonvasDocument {
   documentSize: DocumentSize;
+  language?: string; // BCP 47 language tag (e.g. "en", "tr", "de") — used for locale-aware text rendering
   assets: AssetNode;
   theme: ThemeNode;
   content: ContentNode;

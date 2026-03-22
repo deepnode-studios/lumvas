@@ -476,6 +476,8 @@ export function ThemeEditor() {
   const addBackgroundPreset = useJsonvasStore((s) => s.addBackgroundPreset);
   const documentSize = useJsonvasStore((s) => s.documentSize);
   const setDocumentSize = useJsonvasStore((s) => s.setDocumentSize);
+  const language = useJsonvasStore((s) => s.language) ?? "en";
+  const setLanguage = useJsonvasStore((s) => s.setLanguage);
   const bgPresets = theme.backgroundPresets ?? [];
 
   const sizeKey = `${documentSize.width}x${documentSize.height}`;
@@ -546,6 +548,29 @@ export function ThemeEditor() {
               })
             }
           />
+        </div>
+
+        <div className={styles.fieldRow}>
+          <label>Language</label>
+          <select
+            value={language}
+            onChange={(e) => setLanguage(e.target.value)}
+          >
+            <option value="en">English</option>
+            <option value="tr">Turkish</option>
+            <option value="de">German</option>
+            <option value="fr">French</option>
+            <option value="es">Spanish</option>
+            <option value="pt">Portuguese</option>
+            <option value="it">Italian</option>
+            <option value="nl">Dutch</option>
+            <option value="pl">Polish</option>
+            <option value="ru">Russian</option>
+            <option value="ar">Arabic</option>
+            <option value="zh">Chinese</option>
+            <option value="ja">Japanese</option>
+            <option value="ko">Korean</option>
+          </select>
         </div>
       </PanelSection>
 

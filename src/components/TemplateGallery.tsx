@@ -15,6 +15,7 @@ function TemplatePreview({ template }: { template: SlideTemplate }) {
   const theme = useJsonvasStore((s) => s.theme);
   const assets = useJsonvasStore((s) => s.assets.items);
   const size = useJsonvasStore((s) => s.documentSize);
+  const language = useJsonvasStore((s) => s.language);
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0.2);
 
@@ -49,6 +50,7 @@ function TemplatePreview({ template }: { template: SlideTemplate }) {
           theme={{ ...theme, ...(template.slide.style ? {} : {}) }}
           assets={assets}
           size={size}
+          language={language}
         />
       </div>
     </div>

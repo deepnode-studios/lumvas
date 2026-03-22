@@ -461,6 +461,7 @@ function takeSnapshot(s: DocSnapshot) {
 
 interface JsonvasStore extends JsonvasDocument {
   setDocumentSize: (size: DocumentSize) => void;
+  setLanguage: (lang: string) => void;
   updateTheme: (patch: Partial<ThemeNode>) => void;
 
   // Assets
@@ -531,6 +532,7 @@ export const useJsonvasStore = create<JsonvasStore>((_set, get) => {
   activeElementId: null,
 
   setDocumentSize: (size) => set({ documentSize: size }),
+  setLanguage: (lang) => set({ language: lang }),
 
   updateTheme: (patch) =>
     set((s) => ({ theme: { ...s.theme, ...patch } })),
@@ -769,8 +771,8 @@ export const useJsonvasStore = create<JsonvasStore>((_set, get) => {
   // ── LLM bridge ──
 
   getDocument: () => {
-    const { documentSize, assets, theme, content } = get();
-    return { documentSize, assets, theme, content };
+    const { documentSize, language, assets, theme, content } = get();
+    return { documentSize, language, assets, theme, content };
   },
 
   importDocument: (doc) => {
@@ -796,6 +798,7 @@ export const useJsonvasStore = create<JsonvasStore>((_set, get) => {
     _skipSnapshot = true;
     _set({
       documentSize: doc.documentSize ?? DOCUMENT_SIZES[0],
+      language: doc.language ?? "en",
       assets: doc.assets,
       theme: { ...DEFAULT_THEME, ...doc.theme, palette: doc.theme.palette ?? [], fonts: doc.theme.fonts ?? DEFAULT_FONTS, backgroundPresets: doc.theme.backgroundPresets ?? [] },
       content,

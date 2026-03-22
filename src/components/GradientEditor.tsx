@@ -78,7 +78,7 @@ function parseGradient(css: string): ParsedGradient {
       angle = parseFloat(degMatch[1]);
       stopParts = parts.slice(1);
     } else if (toMatch) {
-      const dir = toMatch[1].toLowerCase();
+      const dir = toMatch[1].toLocaleLowerCase('en-US');
       const dirMap: Record<string, number> = {
         top: 0,
         "top right": 45,
@@ -101,10 +101,10 @@ function parseGradient(css: string): ParsedGradient {
     if (isShapePart) {
       const atMatch = first.match(/^(circle|ellipse)?\s*at\s+(.+)$/i);
       if (atMatch) {
-        radialShape = (atMatch[1]?.toLowerCase() as RadialShape) || "circle";
+        radialShape = (atMatch[1]?.toLocaleLowerCase('en-US') as RadialShape) || "circle";
         radialPosition = atMatch[2].trim();
       } else {
-        radialShape = first.toLowerCase().startsWith("ellipse") ? "ellipse" : "circle";
+        radialShape = first.toLocaleLowerCase('en-US').startsWith("ellipse") ? "ellipse" : "circle";
       }
       stopParts = parts.slice(1);
     }

@@ -19,6 +19,7 @@ export function RenderCanvas() {
   const theme = useJsonvasStore((s) => s.theme);
   const assets = useJsonvasStore((s) => s.assets.items);
   const size = useJsonvasStore((s) => s.documentSize);
+  const language = useJsonvasStore((s) => s.language);
   const activeSlideId = useJsonvasStore((s) => s.activeSlideId);
   const setActiveSlide = useJsonvasStore((s) => s.setActiveSlide);
   const activeElementId = useJsonvasStore((s) => s.activeElementId);
@@ -192,6 +193,7 @@ export function RenderCanvas() {
                     theme={theme}
                     assets={assets}
                     size={size}
+                    language={language}
                     activeElementId={activeElementId}
                     onElementClick={setActiveElement}
                     onBackgroundClick={() => setActiveElement(null)}
@@ -279,6 +281,7 @@ export function RenderCanvas() {
             theme={theme}
             assets={assets}
             size={size}
+            language={language}
           />
         ))}
       </div>

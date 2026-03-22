@@ -18,6 +18,7 @@ interface SlideProps {
   theme: ThemeNode;
   assets: AssetItem[];
   size: DocumentSize;
+  language?: string;
   activeElementId?: string | null;
   onElementClick?: (id: string) => void;
   onBackgroundClick?: () => void;
@@ -506,7 +507,7 @@ const layerBase: React.CSSProperties = {
 };
 
 export const SlideRenderer = forwardRef<HTMLDivElement, SlideProps>(
-  function SlideRenderer({ slide, theme, assets, size, activeElementId, onElementClick, onBackgroundClick }, ref) {
+  function SlideRenderer({ slide, theme, assets, size, language, activeElementId, onElementClick, onBackgroundClick }, ref) {
     // Resolve background preset: merge preset defaults with slide-level overrides
     const ss: SlideStyle | undefined = (() => {
       const raw = slide.style;
@@ -600,7 +601,7 @@ export const SlideRenderer = forwardRef<HTMLDivElement, SlideProps>(
     };
 
     return (
-      <div ref={ref} style={containerStyle}>
+      <div ref={ref} lang={language} style={containerStyle}>
         {patternStyle && <div style={patternStyle} />}
         {bgImageStyle && <div style={bgImageStyle} />}
         {overlayStyle && <div style={overlayStyle} />}

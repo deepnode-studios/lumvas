@@ -32,11 +32,11 @@ export function IconPicker({ value, onChange }: IconPickerProps) {
       ? ICONS
       : ICONS.filter((i) => i.category === activeCategory);
     if (search.trim()) {
-      const q = search.toLowerCase();
+      const q = search.toLocaleLowerCase('en-US');
       list = list.filter(
         (i) =>
-          i.name.toLowerCase().includes(q) ||
-          i.label.toLowerCase().includes(q)
+          i.name.toLocaleLowerCase('en-US').includes(q) ||
+          i.label.toLocaleLowerCase('en-US').includes(q)
       );
     }
     return list;

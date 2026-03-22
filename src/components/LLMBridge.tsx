@@ -214,6 +214,9 @@ Controls the pixel dimensions of every slide.
 - "width": Width in px (e.g. 1080).
 - "height": Height in px (e.g. 1080).
 - "label": Human-readable label (e.g. "Square (1080×1080)").
+
+### language
+BCP 47 language tag (e.g. "en", "tr", "de"). Controls locale-aware text rendering such as CSS text-transform (e.g. Turkish "i" uppercases to "İ", not "I").
 Common presets: 1080×1080 (square), 1080×1350 (portrait 4:5), 1080×1920 (story/reel), 1920×1080 (landscape 16:9), 1200×628 (LinkedIn/OG), 1600×900 (presentation). You can also use any custom dimensions.
 
 ### assets.items
@@ -345,7 +348,7 @@ The following pre-built slide templates are available. You can use these as star
 
 ${templateDesc}
 
-You can use any template structure as a starting point, modify the element contents and styles, or build completely custom slides. You can add, remove, and reorder both slides and elements within slides. Return the complete JSON object with all four top-level keys: documentSize, assets, theme, content.
+You can use any template structure as a starting point, modify the element contents and styles, or build completely custom slides. You can add, remove, and reorder both slides and elements within slides. Return the complete JSON object with all five top-level keys: documentSize, language, assets, theme, content.
 
 ## Current Document
 
