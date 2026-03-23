@@ -285,7 +285,7 @@ Each slide object:
 Each slide's "elements" is an ordered array of content blocks. Each element has:
 
 - "id": Unique identifier string.
-- "type": One of "text" | "image" | "button" | "list" | "divider" | "spacer" | "logo" | "icon" | "group".
+- "type": One of "text" | "image" | "button" | "list" | "divider" | "spacer" | "logo" | "icon" | "chart" | "group".
 
 #### Element types
 
@@ -307,10 +307,25 @@ Each slide's "elements" is an ordered array of content blocks. Each element has:
 
 **"logo"** — Renders an asset image (logo/icon). Set "assetId" to reference a specific asset by its ID, or omit to use the first asset. Styling: width (CSS string), maxWidth (CSS string, default "120px"), height (CSS string, default "80px"), color (hex or token — only applies when the referenced asset has "tintable": true, used to colorize the logo via CSS masking).
 
-**"icon"** — An inline SVG icon from the built-in icon library. Set "iconName" to the icon identifier string.
-  Categories: general, arrows, social, media, communication, commerce, content, status, shapes.
-  Common icon names: star, heart, home, settings, search, user, users, check, x, plus, minus, eye, lock, shield, zap, flame, trophy, target, lightbulb, rocket, globe, map-pin, calendar, clock, thumbs-up, crown, sparkles, hash, at-sign, arrow-right, arrow-left, arrow-up, arrow-down, arrow-up-right, chevron-right, chevron-down, external-link, refresh-cw, instagram, twitter, linkedin, youtube, tiktok, github, facebook, dribbble, spotify, pinterest, threads, play, pause, camera, image, video, mic, headphones, music, mail, phone, message-circle, send, bell, share-2, megaphone, shopping-cart, shopping-bag, tag, credit-card, gift, dollar-sign, percent, badge-check, file, folder, link, bookmark, edit, copy, download, upload, list, layout, type, code, terminal, info, alert-triangle, check-circle, x-circle, trending-up, bar-chart, activity, award, circle, square, triangle, hexagon, diamond, star-filled, heart-filled, circle-filled.
-  Styling: iconSize (px, default 48), color (hex or token: "primary", "secondary", etc.), strokeWidth (0.5-4, default 2, for stroke-based icons), opacity (0-1).
+**"icon"** — An icon element using external icon libraries. Set "iconLibrary" to one of: "lucide" (default), "phosphor", or "remix". Set "iconName" to the PascalCase component name from the selected library.
+  Lucide examples: Star, Heart, Home, Settings, Search, ArrowRight, ChevronDown, Code, Terminal, Rocket, Globe, MapPin, Calendar, Clock, ThumbsUp, Crown, Sparkles, Mail, Phone, ShoppingCart, Download, Upload, TrendingUp, BarChart, Activity.
+  Phosphor examples: Star, Heart, House, Gear, MagnifyingGlass, ArrowRight, Code, Terminal, Rocket, Globe, MapPin, Calendar, Clock, ThumbsUp, Crown, Sparkle, Envelope, Phone, ShoppingCart, DownloadSimple, UploadSimple, TrendUp, ChartBar.
+  Remix examples: RiStarLine, RiHeartLine, RiHomeLine, RiSettingsLine, RiSearchLine, RiArrowRightLine, RiCodeLine, RiTerminalLine, RiRocketLine, RiGlobeLine, RiMapPinLine, RiCalendarLine, RiTimeLine, RiThumbUpLine, RiMailLine, RiPhoneLine, RiShoppingCartLine, RiDownloadLine, RiUploadLine, RiBarChartLine.
+  Styling: iconSize (px, default 48), color (hex or token: "primary", "secondary", etc.), strokeWidth (0.5-4, default 2, lucide only), opacity (0-1).
+
+**"chart"** — A data visualization element. Supports three chart types via "chartType":
+  - "bar": Horizontal bar chart. Bars auto-scale relative to the maximum value.
+  - "donut": Donut/ring chart using conic-gradient. Shows color legend below.
+  - "progress": Progress bars where each value is a percentage (0-100).
+  Data: "chartData" is an array of data points, each with:
+    - "label": Display label (string).
+    - "value": Numeric value. For "bar" charts, values are relative. For "progress" charts, values are percentages (0-100).
+    - "color": Optional color token or hex (e.g. "primary", "secondary", "#10b981"). If omitted, cycles through primary/secondary.
+  Options:
+    - "showLabels": Show label text (boolean, default true).
+    - "showValues": Show numeric values (boolean, default true).
+  Styling: fontSize (px, default 14), color (text color — hex or token), width (CSS string), maxWidth (CSS string), height (CSS string — controls donut size for "donut" type, e.g. "200").
+  Example: { "type": "chart", "chartType": "donut", "chartData": [{ "label": "Sales", "value": 45, "color": "primary" }, { "label": "Marketing", "value": 30, "color": "secondary" }], "showLabels": true, "showValues": true }
 
 **"group"** — A flex container that groups child elements together with its own layout. Useful for horizontal layouts within vertical slides (e.g. side-by-side columns, icon+text rows, button groups).
   - "children": Array of child SlideElement objects (same schema as regular elements, except no nested groups).

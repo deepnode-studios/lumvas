@@ -2,45 +2,56 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
+import type { IconLibrary } from "@/types/schema";
 import {
-  ICONS,
-  ICON_CATEGORIES,
-  ICON_CATEGORY_LABELS,
-  getIcon,
-  type IconDef,
-  type IconCategory,
-} from "@/data/icons";
+  ICON_LIBRARIES,
+  getIconEntries,
+  getLucideEntries,
+  RenderIcon,
+  type IconEntry,
+} from "@/data/iconLibraries";
 import ip from "./iconPicker.module.css";
 
 interface IconPickerProps {
+  library: IconLibrary;
   value?: string;
+  onLibraryChange: (library: IconLibrary) => void;
   onChange: (iconName: string) => void;
 }
 
-export function IconPicker({ value, onChange }: IconPickerProps) {
+export function IconPicker({
+  library,
+  value,
+  onLibraryChange,
+  onChange,
+}: IconPickerProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [activeCategory, setActiveCategory] = useState<IconCategory | "all">("all");
+  const [entries, setEntries] = useState<IconEntry[]>(getLucideEntries);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState({ top: 0, left: 0, width: 280 });
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 300 });
 
-  const currentIcon = getIcon(value ?? "star");
+  // Load entries when library changes
+  useEffect(() => {
+    let cancelled = false;
+    getIconEntries(library).then((e) => {
+      if (!cancelled) setEntries(e);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [library]);
 
   const filtered = useMemo(() => {
-    let list: IconDef[] = activeCategory === "all"
-      ? ICONS
-      : ICONS.filter((i) => i.category === activeCategory);
-    if (search.trim()) {
-      const q = search.toLocaleLowerCase('en-US');
-      list = list.filter(
-        (i) =>
-          i.name.toLocaleLowerCase('en-US').includes(q) ||
-          i.label.toLocaleLowerCase('en-US').includes(q)
-      );
-    }
-    return list;
-  }, [search, activeCategory]);
+    if (!search.trim()) return entries;
+    const q = search.toLocaleLowerCase("en-US");
+    return entries.filter(
+      (e) =>
+        e.name.toLocaleLowerCase("en-US").includes(q) ||
+        e.label.toLocaleLowerCase("en-US").includes(q)
+    );
+  }, [search, entries]);
 
   const updatePos = useCallback(() => {
     if (!triggerRef.current) return;
@@ -48,7 +59,7 @@ export function IconPicker({ value, onChange }: IconPickerProps) {
     setPos({
       top: r.bottom + 4,
       left: Math.max(4, r.left - 100),
-      width: 280,
+      width: 300,
     });
   }, []);
 
@@ -57,7 +68,11 @@ export function IconPicker({ value, onChange }: IconPickerProps) {
     updatePos();
     const handleClick = (e: MouseEvent) => {
       const t = e.target as HTMLElement;
-      if (triggerRef.current?.contains(t) || popoverRef.current?.contains(t)) return;
+      if (
+        triggerRef.current?.contains(t) ||
+        popoverRef.current?.contains(t)
+      )
+        return;
       setOpen(false);
     };
     document.addEventListener("mousedown", handleClick);
@@ -68,6 +83,9 @@ export function IconPicker({ value, onChange }: IconPickerProps) {
     };
   }, [open, updatePos]);
 
+  const currentLabel =
+    entries.find((e) => e.name === value)?.label ?? value ?? "Select";
+
   return (
     <>
       <button
@@ -76,23 +94,10 @@ export function IconPicker({ value, onChange }: IconPickerProps) {
         onClick={() => setOpen(!open)}
         type="button"
       >
-        {currentIcon && (
-          <svg
-            width={16}
-            height={16}
-            viewBox={currentIcon.viewBox}
-            fill={currentIcon.fill ? "currentColor" : "none"}
-            stroke={currentIcon.fill ? "none" : "currentColor"}
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            {currentIcon.paths.map((d, i) => (
-              <path key={i} d={d} />
-            ))}
-          </svg>
+        {value && (
+          <RenderIcon library={library} name={value} size={16} />
         )}
-        <span className={ip.triggerLabel}>{currentIcon?.label ?? value ?? "Select"}</span>
+        <span className={ip.triggerLabel}>{currentLabel}</span>
       </button>
 
       {open &&
@@ -103,6 +108,23 @@ export function IconPicker({ value, onChange }: IconPickerProps) {
             data-popover="icon-picker"
             style={{ top: pos.top, left: pos.left, width: pos.width }}
           >
+            {/* Library tabs */}
+            <div className={ip.categories}>
+              {ICON_LIBRARIES.map((lib) => (
+                <button
+                  key={lib.id}
+                  className={`${ip.catBtn} ${library === lib.id ? ip.catActive : ""}`}
+                  onClick={() => {
+                    onLibraryChange(lib.id);
+                    setSearch("");
+                  }}
+                  type="button"
+                >
+                  {lib.label}
+                </button>
+              ))}
+            </div>
+
             <input
               className={ip.search}
               type="text"
@@ -112,28 +134,8 @@ export function IconPicker({ value, onChange }: IconPickerProps) {
               autoFocus
             />
 
-            <div className={ip.categories}>
-              <button
-                className={`${ip.catBtn} ${activeCategory === "all" ? ip.catActive : ""}`}
-                onClick={() => setActiveCategory("all")}
-                type="button"
-              >
-                All
-              </button>
-              {ICON_CATEGORIES.map((cat) => (
-                <button
-                  key={cat}
-                  className={`${ip.catBtn} ${activeCategory === cat ? ip.catActive : ""}`}
-                  onClick={() => setActiveCategory(cat)}
-                  type="button"
-                >
-                  {ICON_CATEGORY_LABELS[cat]}
-                </button>
-              ))}
-            </div>
-
             <div className={ip.grid}>
-              {filtered.map((icon) => (
+              {filtered.slice(0, 200).map((icon) => (
                 <button
                   key={icon.name}
                   className={`${ip.iconBtn} ${icon.name === value ? ip.iconActive : ""}`}
@@ -144,24 +146,20 @@ export function IconPicker({ value, onChange }: IconPickerProps) {
                   title={icon.label}
                   type="button"
                 >
-                  <svg
-                    width={20}
-                    height={20}
-                    viewBox={icon.viewBox}
-                    fill={icon.fill ? "currentColor" : "none"}
-                    stroke={icon.fill ? "none" : "currentColor"}
-                    strokeWidth={2}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    {icon.paths.map((d, i) => (
-                      <path key={i} d={d} />
-                    ))}
-                  </svg>
+                  <RenderIcon
+                    library={library}
+                    name={icon.name}
+                    size={20}
+                  />
                 </button>
               ))}
               {filtered.length === 0 && (
                 <div className={ip.empty}>No icons found</div>
+              )}
+              {filtered.length > 200 && (
+                <div className={ip.empty}>
+                  {filtered.length - 200} more — refine your search
+                </div>
               )}
             </div>
           </div>,

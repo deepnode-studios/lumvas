@@ -2,7 +2,8 @@
 
 import { useRef, useState, useCallback, useEffect } from "react";
 import { useJsonvasStore, createElement } from "@/store/useJsonvasStore";
-import type { ElementType, SlideElement, FlexAlign, FlexJustify, FlexDirection, BackgroundPattern } from "@/types/schema";
+import type { ElementType, SlideElement, FlexAlign, FlexJustify, FlexDirection, BackgroundPattern, IconLibrary, ChartType, ChartDataPoint } from "@/types/schema";
+import { legacyNameToLucide } from "@/data/iconLibraries";
 import { TemplateGallery } from "./TemplateGallery";
 import { PanelSection } from "./PanelSection";
 import { ColorPicker } from "./ColorPicker";
@@ -21,6 +22,7 @@ const ELEMENT_TYPES: { type: ElementType; label: string }[] = [
   { type: "spacer", label: "Spacer" },
   { type: "logo", label: "Logo" },
   { type: "icon", label: "Icon" },
+  { type: "chart", label: "Chart" },
   { type: "group", label: "Group" },
 ];
 
@@ -34,6 +36,7 @@ const ELEMENT_ICONS: Record<ElementType, string> = {
   logo: "◎",
   icon: "★",
   group: "[ ]",
+  chart: "▥",
 };
 
 function fileToBase64(file: File): Promise<string> {
@@ -414,12 +417,19 @@ function ElementEditor({
       })()}
 
       {/* Icon */}
-      {el.type === "icon" && (
+      {el.type === "icon" && (() => {
+        const lib = (el.iconLibrary ?? "lucide") as IconLibrary;
+        const iconVal = lib === "lucide" && el.iconName
+          ? legacyNameToLucide(el.iconName)
+          : (el.iconName ?? "Star");
+        return (
         <>
           <div className={styles.fieldRow}>
             <label>Icon</label>
             <IconPicker
-              value={el.iconName ?? "star"}
+              library={lib}
+              value={iconVal}
+              onLibraryChange={(v) => update({ iconLibrary: v, iconName: undefined })}
               onChange={(v) => update({ iconName: v })}
             />
           </div>
@@ -440,17 +450,19 @@ function ElementEditor({
               onChange={(v) => update({ color: v === "primary" ? undefined : v })}
             />
           </div>
-          <div className={styles.fieldRow}>
-            <label>Stroke</label>
-            <input
-              type="number"
-              value={el.strokeWidth ?? 2}
-              min={0.5}
-              max={4}
-              step={0.5}
-              onChange={(e) => update({ strokeWidth: Number(e.target.value) })}
-            />
-          </div>
+          {lib === "lucide" && (
+            <div className={styles.fieldRow}>
+              <label>Stroke</label>
+              <input
+                type="number"
+                value={el.strokeWidth ?? 2}
+                min={0.5}
+                max={4}
+                step={0.5}
+                onChange={(e) => update({ strokeWidth: Number(e.target.value) })}
+              />
+            </div>
+          )}
           <div className={styles.fieldRow}>
             <label>Opacity</label>
             <input
@@ -463,7 +475,118 @@ function ElementEditor({
             />
           </div>
         </>
-      )}
+        );
+      })()}
+
+      {/* Chart */}
+      {el.type === "chart" && (() => {
+        const chartData: ChartDataPoint[] = el.chartData ?? [];
+        const updateDataPoint = (idx: number, patch: Partial<ChartDataPoint>) => {
+          const next = chartData.map((d, i) => (i === idx ? { ...d, ...patch } : d));
+          update({ chartData: next });
+        };
+        const addDataPoint = () => {
+          update({ chartData: [...chartData, { label: `Item ${chartData.length + 1}`, value: 50 }] });
+        };
+        const removeDataPoint = (idx: number) => {
+          update({ chartData: chartData.filter((_, i) => i !== idx) });
+        };
+        return (
+          <>
+            <div className={styles.fieldRow}>
+              <label>Chart Type</label>
+              <select
+                value={el.chartType ?? "bar"}
+                onChange={(e) => update({ chartType: e.target.value as ChartType })}
+              >
+                <option value="bar">Bar Chart</option>
+                <option value="donut">Donut Chart</option>
+                <option value="progress">Progress Bars</option>
+              </select>
+            </div>
+            <div className={styles.fieldRow}>
+              <label>Font Size</label>
+              <input
+                type="number"
+                value={el.fontSize ?? 14}
+                min={8}
+                max={48}
+                onChange={(e) => update({ fontSize: Number(e.target.value) })}
+              />
+            </div>
+            <div className={styles.fieldRow}>
+              <label>Color</label>
+              <ColorPicker
+                value={el.color ?? "primary"}
+                onChange={(v) => update({ color: v === "primary" ? undefined : v })}
+              />
+            </div>
+            {el.chartType === "donut" && (
+              <div className={styles.fieldRow}>
+                <label>Size</label>
+                <input
+                  type="number"
+                  value={parseInt(el.height ?? "200") || 200}
+                  min={80}
+                  max={600}
+                  step={10}
+                  onChange={(e) => update({ height: `${e.target.value}` })}
+                />
+              </div>
+            )}
+            <div className={styles.fieldRow}>
+              <label>Labels</label>
+              <input
+                type="checkbox"
+                checked={el.showLabels !== false}
+                onChange={(e) => update({ showLabels: e.target.checked })}
+              />
+            </div>
+            <div className={styles.fieldRow}>
+              <label>Values</label>
+              <input
+                type="checkbox"
+                checked={el.showValues !== false}
+                onChange={(e) => update({ showValues: e.target.checked })}
+              />
+            </div>
+            <div style={{ marginTop: 8 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, display: "block" }}>Data Points</label>
+              {chartData.map((d, i) => (
+                <div key={i} style={{ display: "flex", gap: 4, marginBottom: 4, alignItems: "center" }}>
+                  <input
+                    type="text"
+                    value={d.label}
+                    style={{ flex: 1, minWidth: 0 }}
+                    placeholder="Label"
+                    onChange={(e) => updateDataPoint(i, { label: e.target.value })}
+                  />
+                  <input
+                    type="number"
+                    value={d.value}
+                    style={{ width: 60 }}
+                    onChange={(e) => updateDataPoint(i, { value: Number(e.target.value) })}
+                  />
+                  <ColorPicker
+                    value={d.color ?? ""}
+                    onChange={(v) => updateDataPoint(i, { color: v || undefined })}
+                  />
+                  <button
+                    className={styles.btnDanger}
+                    onClick={() => removeDataPoint(i)}
+                    title="Remove"
+                  >
+                    &times;
+                  </button>
+                </div>
+              ))}
+              <button className={styles.btnSmall} onClick={addDataPoint}>
+                + Add Data Point
+              </button>
+            </div>
+          </>
+        );
+      })()}
 
       {/* Group layout */}
       {el.type === "group" && (
@@ -819,6 +942,8 @@ function ElementListItem({
             ? el.content.slice(0, 24) || el.type
             : isGroup
             ? `group (${children.length})`
+            : el.type === "chart"
+            ? `chart (${el.chartType ?? "bar"})`
             : el.type}
         </span>
         <div className={builderStyles.slideActions}>

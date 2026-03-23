@@ -9,21 +9,24 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
+    "@remixicon/react": "^4.9.0",
+    "file-saver": "^2.0.5",
+    "html-to-image": "^1.11.11",
+    "jszip": "^3.10.1",
+    "lucide-react": "^1.0.0",
     "next": "^15.3.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "zustand": "^5.0.0",
-    "html-to-image": "^1.11.11",
-    "jszip": "^3.10.1",
-    "file-saver": "^2.0.5"
+    "zustand": "^5.0.0"
   },
   "devDependencies": {
+    "@types/file-saver": "^2.0.7",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "@types/file-saver": "^2.0.7",
-    "typescript": "^5.7.0",
     "eslint": "^9.0.0",
-    "eslint-config-next": "^15.3.0"
+    "eslint-config-next": "^15.3.0",
+    "typescript": "^5.7.0"
   }
 }

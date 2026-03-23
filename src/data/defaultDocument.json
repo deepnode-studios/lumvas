@@ -64,7 +64,8 @@
           {
             "id": "el_icon01",
             "type": "icon",
-            "iconName": "code",
+            "iconLibrary": "lucide",
+            "iconName": "Code",
             "iconSize": 64,
             "color": "secondary"
           },
@@ -105,7 +106,8 @@
           {
             "id": "el_icon02",
             "type": "icon",
-            "iconName": "alert-triangle",
+            "iconLibrary": "lucide",
+            "iconName": "AlertTriangle",
             "iconSize": 48,
             "color": "accent-blue"
           },
@@ -172,12 +174,12 @@
         ]
       },
       {
-        "id": "sl_tech04",
+        "id": "sl_charts04",
         "alignItems": "flex-start",
         "justifyContent": "center",
         "direction": "column",
-        "padding": 100,
-        "gap": 32,
+        "padding": 80,
+        "gap": 28,
         "style": {
           "backgroundColor": "#161b22"
         },
@@ -185,14 +187,15 @@
           {
             "id": "el_icon03",
             "type": "icon",
-            "iconName": "terminal",
-            "iconSize": 48,
+            "iconLibrary": "lucide",
+            "iconName": "BarChart",
+            "iconSize": 44,
             "color": "secondary"
           },
           {
             "id": "el_text07",
             "type": "text",
-            "content": "Architected for scale.",
+            "content": "Data Visualization",
             "fontId": "header",
             "fontSize": 48,
             "fontWeight": 700,
@@ -200,20 +203,70 @@
             "color": "primary"
           },
           {
-            "id": "el_divider01",
-            "type": "divider",
-            "color": "secondary",
-            "opacity": 0.5,
-            "maxWidth": "100px"
-          },
-          {
             "id": "el_text08",
             "type": "text",
-            "content": "Built on the Next.js App Router using custom styling architecture. We maintain strict programmatic control over design tokens by entirely avoiding utility-class bloat.",
+            "content": "Embed charts directly in your slides — no external tools needed.",
             "fontId": "body",
-            "fontSize": 26,
+            "fontSize": 22,
             "lineHeight": 1.5,
             "color": "#8b949e"
+          },
+          {
+            "id": "el_chart_bar",
+            "type": "chart",
+            "chartType": "bar",
+            "chartData": [
+              { "label": "Rendering", "value": 95, "color": "secondary" },
+              { "label": "Theming", "value": 80, "color": "accent-blue" },
+              { "label": "Export", "value": 70, "color": "primary" }
+            ],
+            "showLabels": true,
+            "showValues": true,
+            "fontSize": 16,
+            "color": "#8b949e",
+            "width": "100%"
+          },
+          {
+            "id": "el_grp_donut",
+            "type": "group",
+            "direction": "row",
+            "alignItems": "center",
+            "justifyContent": "center",
+            "gap": 32,
+            "width": "100%",
+            "children": [
+              {
+                "id": "el_chart_donut",
+                "type": "chart",
+                "chartType": "donut",
+                "chartData": [
+                  { "label": "JSON", "value": 45, "color": "secondary" },
+                  { "label": "CSS", "value": 30, "color": "accent-blue" },
+                  { "label": "React", "value": 25, "color": "#8b949e" }
+                ],
+                "showLabels": true,
+                "showValues": false,
+                "fontSize": 13,
+                "color": "#8b949e",
+                "height": "160",
+                "flexShrink": 0
+              },
+              {
+                "id": "el_chart_progress",
+                "type": "chart",
+                "chartType": "progress",
+                "chartData": [
+                  { "label": "Slide Builder", "value": 100, "color": "secondary" },
+                  { "label": "Chart Engine", "value": 85, "color": "accent-blue" },
+                  { "label": "AI Iteration", "value": 60, "color": "#8b949e" }
+                ],
+                "showLabels": true,
+                "showValues": true,
+                "fontSize": 13,
+                "color": "#8b949e",
+                "flex": 1
+              }
+            ]
           }
         ]
       },
@@ -231,7 +284,8 @@
           {
             "id": "el_icon04",
             "type": "icon",
-            "iconName": "rocket",
+            "iconLibrary": "lucide",
+            "iconName": "Rocket",
             "iconSize": 64,
             "color": "primary"
           },

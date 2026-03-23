@@ -1,5 +1,7 @@
 /* ─── Jsonvas Document Schema ─── */
 
+export type IconLibrary = "lucide" | "phosphor" | "remix";
+
 export interface AssetItem {
   id: string;
   label: string;
@@ -61,7 +63,18 @@ export type ElementType =
   | "spacer"
   | "logo"
   | "group"
-  | "icon";
+  | "icon"
+  | "chart";
+
+/* ─── Chart data ─── */
+
+export type ChartType = "bar" | "donut" | "progress";
+
+export interface ChartDataPoint {
+  label: string;
+  value: number;
+  color?: string; // color token or hex
+}
 
 export interface SlideElement {
   id: string;
@@ -109,9 +122,10 @@ export interface SlideElement {
   alignSelf?: FlexAlign | "stretch"; // override parent's alignItems for this element
 
   // Icon specific
-  iconName?: string; // references an icon from the built-in registry
+  iconLibrary?: IconLibrary; // icon library: "lucide", "phosphor", or "remix"
+  iconName?: string; // icon component name within the selected library
   iconSize?: number; // pixel size (width = height)
-  strokeWidth?: number; // SVG stroke width for stroke-based icons
+  strokeWidth?: number; // SVG stroke width for stroke-based icons (lucide only)
 
   // Group layout (only for type "group")
   children?: SlideElement[];
@@ -120,6 +134,12 @@ export interface SlideElement {
   justifyContent?: FlexJustify;
   gap?: number;
   padding?: number;
+
+  // Chart specific
+  chartType?: ChartType;
+  chartData?: ChartDataPoint[];
+  showLabels?: boolean;   // show label text (default true)
+  showValues?: boolean;   // show numeric values (default true)
 }
 
 /* ─── Slide ─── */

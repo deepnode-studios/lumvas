@@ -9,8 +9,9 @@ import type {
   AssetItem,
   DocumentSize,
   BackgroundPattern,
+  ChartDataPoint,
 } from "@/types/schema";
-import { getIcon } from "@/data/icons";
+import { RenderIcon, legacyNameToLucide } from "@/data/iconLibraries";
 import styles from "./slides.module.css";
 
 interface SlideProps {
@@ -149,6 +150,7 @@ function ElementRenderer({
   onClick,
   activeElementId,
   onElementClick,
+  parentDirection,
 }: {
   el: SlideElement;
   theme: ThemeNode;
@@ -158,7 +160,9 @@ function ElementRenderer({
   onClick?: (e?: React.MouseEvent) => void;
   activeElementId?: string | null;
   onElementClick?: (id: string) => void;
+  parentDirection?: "row" | "column";
 }) {
+  const isRowChild = parentDirection === "row";
   const color = resolveColor(el.color, theme, slide);
   const primary = resolveColor("primary", theme, slide)!;
   const secondary = resolveColor("secondary", theme, slide)!;
@@ -206,7 +210,8 @@ function ElementRenderer({
             opacity: el.opacity ?? 1,
             maxWidth: el.maxWidth ?? "100%",
             textTransform: el.textTransform ?? "none",
-            width: "100%",
+            width: el.width ?? (isRowChild ? undefined : "100%"),
+            minWidth: isRowChild ? 0 : undefined,
             ...spacing,
             ...flexProps,
             ...activeOutline,
@@ -225,7 +230,8 @@ function ElementRenderer({
           className={styles.element}
           style={{
             maxWidth: el.maxWidth ?? "100%",
-            width: el.width ?? "100%",
+            width: el.width ?? (isRowChild ? undefined : "100%"),
+            minWidth: isRowChild ? 0 : undefined,
             ...spacing,
             ...flexProps,
             ...activeOutline,
@@ -391,6 +397,7 @@ function ElementRenderer({
               isActive={activeElementId === child.id}
               activeElementId={activeElementId}
               onElementClick={onElementClick}
+              parentDirection={el.direction ?? "row"}
               onClick={
                 onElementClick
                   ? (e?: React.MouseEvent) => { e?.stopPropagation(); onElementClick(child.id); }
@@ -408,8 +415,10 @@ function ElementRenderer({
     }
 
     case "icon": {
-      const iconDef = getIcon(el.iconName ?? "star");
-      if (!iconDef) return null;
+      const lib = el.iconLibrary ?? "lucide";
+      const iconName = lib === "lucide" && el.iconName
+        ? legacyNameToLucide(el.iconName)
+        : (el.iconName ?? "Star");
       const size = el.iconSize ?? 48;
       const iconColor = color || primary;
       const sw = el.strokeWidth ?? 2;
@@ -419,24 +428,210 @@ function ElementRenderer({
           style={{ ...spacing, ...flexProps, ...activeOutline }}
           onClick={onClick}
         >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width={size}
-            height={size}
-            viewBox={iconDef.viewBox}
-            fill={iconDef.fill ? iconColor : "none"}
-            stroke={iconDef.fill ? "none" : iconColor}
-            strokeWidth={iconDef.fill ? undefined : sw}
-            strokeLinecap="round"
-            strokeLinejoin="round"
+          <RenderIcon
+            library={lib}
+            name={iconName}
+            size={size}
+            color={iconColor}
+            strokeWidth={lib === "lucide" ? sw : undefined}
             style={{ opacity: el.opacity ?? 1 }}
-          >
-            {iconDef.paths.map((d, i) => (
-              <path key={i} d={d} />
-            ))}
-          </svg>
+          />
         </div>
       );
+    }
+
+    case "chart": {
+      const chartType = el.chartType ?? "bar";
+      const data: ChartDataPoint[] = el.chartData ?? [];
+      const showLabels = el.showLabels !== false;
+      const showValues = el.showValues !== false;
+      const chartFontSize = el.fontSize ?? 14;
+      const chartColor = color || primary;
+
+      const resolveDataColor = (d: ChartDataPoint, idx: number) => {
+        if (d.color) return resolveColor(d.color, theme, slide) ?? chartColor;
+        // Cycle through primary/secondary for uncolored items
+        return idx % 2 === 0 ? primary : secondary;
+      };
+
+      if (chartType === "bar") {
+        const maxVal = Math.max(...data.map((d) => d.value), 1);
+        return (
+          <div
+            className={styles.element}
+            style={{
+              width: el.width ?? "100%",
+              maxWidth: el.maxWidth ?? "100%",
+              minWidth: 0,
+              ...spacing,
+              ...flexProps,
+              ...activeOutline,
+            }}
+            onClick={onClick}
+          >
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
+              {data.map((d, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  {showLabels && (
+                    <div style={{
+                      minWidth: 80,
+                      fontSize: chartFontSize,
+                      color: chartColor,
+                      fontFamily,
+                      textAlign: "right",
+                      flexShrink: 0,
+                    }}>
+                      {d.label}
+                    </div>
+                  )}
+                  <div style={{
+                    flex: 1,
+                    height: chartFontSize * 1.8,
+                    backgroundColor: `${resolveDataColor(d, i)}20`,
+                    borderRadius: 4,
+                    overflow: "hidden",
+                    position: "relative",
+                  }}>
+                    <div style={{
+                      width: `${(d.value / maxVal) * 100}%`,
+                      height: "100%",
+                      backgroundColor: resolveDataColor(d, i),
+                      borderRadius: 4,
+                      transition: "width 0.3s ease",
+                    }} />
+                  </div>
+                  {showValues && (
+                    <div style={{
+                      minWidth: 36,
+                      fontSize: chartFontSize,
+                      color: chartColor,
+                      fontFamily,
+                      fontWeight: 600,
+                      flexShrink: 0,
+                    }}>
+                      {d.value}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      }
+
+      if (chartType === "donut") {
+        const total = data.reduce((sum, d) => sum + d.value, 0) || 1;
+        // Build conic-gradient stops
+        let acc = 0;
+        const stops = data.map((d, i) => {
+          const start = acc;
+          acc += (d.value / total) * 360;
+          return `${resolveDataColor(d, i)} ${start}deg ${acc}deg`;
+        });
+        const donutSize = Math.min(parseInt(el.height ?? "200") || 200, 400);
+        return (
+          <div
+            className={styles.element}
+            style={{
+              width: el.width ?? undefined,
+              maxWidth: el.maxWidth ?? undefined,
+              minWidth: 0,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 16,
+              ...spacing,
+              ...flexProps,
+              ...activeOutline,
+            }}
+            onClick={onClick}
+          >
+            <div style={{
+              width: donutSize,
+              height: donutSize,
+              borderRadius: "50%",
+              background: `conic-gradient(${stops.join(", ")})`,
+              position: "relative",
+              flexShrink: 0,
+            }}>
+              <div style={{
+                position: "absolute",
+                inset: "25%",
+                borderRadius: "50%",
+                backgroundColor: resolveColor("background", theme, slide) || theme.backgroundColor,
+              }} />
+            </div>
+            {showLabels && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 12, justifyContent: "center" }}>
+                {data.map((d, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: chartFontSize, fontFamily, color: chartColor }}>
+                    <div style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: resolveDataColor(d, i), flexShrink: 0 }} />
+                    <span>{d.label}{showValues ? ` (${d.value})` : ""}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      if (chartType === "progress") {
+        // Progress: each data point is a separate progress bar (value 0-100)
+        return (
+          <div
+            className={styles.element}
+            style={{
+              width: el.width ?? "100%",
+              maxWidth: el.maxWidth ?? "100%",
+              minWidth: 0,
+              ...spacing,
+              ...flexProps,
+              ...activeOutline,
+            }}
+            onClick={onClick}
+          >
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, width: "100%" }}>
+              {data.map((d, i) => {
+                const pct = Math.min(Math.max(d.value, 0), 100);
+                return (
+                  <div key={i}>
+                    {(showLabels || showValues) && (
+                      <div style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        marginBottom: 4,
+                        fontSize: chartFontSize,
+                        color: chartColor,
+                        fontFamily,
+                      }}>
+                        {showLabels && <span>{d.label}</span>}
+                        {showValues && <span style={{ fontWeight: 600 }}>{pct}%</span>}
+                      </div>
+                    )}
+                    <div style={{
+                      width: "100%",
+                      height: chartFontSize * 1.2,
+                      backgroundColor: `${resolveDataColor(d, i)}20`,
+                      borderRadius: 100,
+                      overflow: "hidden",
+                    }}>
+                      <div style={{
+                        width: `${pct}%`,
+                        height: "100%",
+                        backgroundColor: resolveDataColor(d, i),
+                        borderRadius: 100,
+                        transition: "width 0.3s ease",
+                      }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      }
+
+      return null;
     }
 
     case "logo": {
@@ -618,6 +813,7 @@ export const SlideRenderer = forwardRef<HTMLDivElement, SlideProps>(
               isActive={activeElementId === el.id}
               activeElementId={activeElementId}
               onElementClick={onElementClick}
+              parentDirection={slide.direction ?? "column"}
               onClick={
                 onElementClick
                   ? (e?: React.MouseEvent) => { e?.stopPropagation(); onElementClick(el.id); }

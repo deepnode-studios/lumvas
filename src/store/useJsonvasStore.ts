@@ -231,7 +231,8 @@ export function createElement(type: ElementType): SlideElement {
         id: uid(),
         type: "icon",
         content: "",
-        iconName: "star",
+        iconLibrary: "lucide",
+        iconName: "Star",
         iconSize: 48,
         color: "primary",
       };
@@ -246,6 +247,23 @@ export function createElement(type: ElementType): SlideElement {
         gap: 16,
         padding: 0,
         children: [],
+      };
+    case "chart":
+      return {
+        id: uid(),
+        type: "chart",
+        content: "",
+        chartType: "bar",
+        chartData: [
+          { label: "Category A", value: 75, color: "primary" },
+          { label: "Category B", value: 50, color: "secondary" },
+          { label: "Category C", value: 90 },
+        ],
+        showLabels: true,
+        showValues: true,
+        width: "100%",
+        maxWidth: "100%",
+        fontSize: 14,
       };
   }
 }
@@ -777,6 +795,7 @@ export const useJsonvasStore = create<JsonvasStore>((_set, get) => {
 
   importDocument: (doc) => {
     // Normalize group elements: LLMs may use "elements" instead of "children"
+    // Normalize chart elements: ensure chartData is always an array
     const normalizeElements = (els: SlideElement[]): SlideElement[] =>
       els.map((el) => {
         if (el.type === "group") {
@@ -784,6 +803,12 @@ export const useJsonvasStore = create<JsonvasStore>((_set, get) => {
           const kids = raw.children ?? raw.elements ?? [];
           delete raw.elements;
           return { ...el, children: normalizeElements(kids) };
+        }
+        if (el.type === "chart") {
+          const raw = el as SlideElement & { data?: SlideElement["chartData"] };
+          const chartData = el.chartData ?? raw.data ?? [];
+          delete raw.data;
+          return { ...el, chartData: Array.isArray(chartData) ? chartData : [] };
         }
         return el;
       });
