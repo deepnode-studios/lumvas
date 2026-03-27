@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, useCallback, useEffect } from "react";
-import { useLumvasStore, createElement } from "@/store/useLumvasStore";
+import { useLumvasStore, selectSlideContent, createElement } from "@/store/useLumvasStore";
 import { useFileStore } from "@/store/useFileStore";
 import { writeMediaFromDataUri } from "@/utils/lumvasFile";
 import type { ElementType, SlideElement, FlexAlign, FlexJustify, FlexDirection, BackgroundPattern, IconLibrary, ChartType, ChartDataPoint } from "@/types/schema";
@@ -1029,7 +1029,7 @@ function ElementEditorSection({ el, slideId }: { el: SlideElement; slideId: stri
 }
 
 export function CarouselBuilder() {
-  const slides = useLumvasStore((s) => s.content.slides);
+  const slides = useLumvasStore((s) => selectSlideContent(s).slides);
   const activeSlideId = useLumvasStore((s) => s.activeSlideId);
   const activeElementId = useLumvasStore((s) => s.activeElementId);
   const updateSlide = useLumvasStore((s) => s.updateSlide);

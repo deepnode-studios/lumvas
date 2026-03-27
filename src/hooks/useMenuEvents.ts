@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useFileStore } from "@/store/useFileStore";
 import { useViewStore } from "@/store/useViewStore";
 import { exportSlidesToFolder, exportMerged } from "@/utils/exportSlides";
+import { exportVideo } from "@/utils/exportVideo";
 
 const ZOOM_STEPS = [0.1, 0.15, 0.25, 0.33, 0.5, 0.67, 0.75, 1, 1.25, 1.5, 2];
 
@@ -24,6 +25,7 @@ export function useMenuEvents() {
         ["menu:export_slides", () => exportSlidesToFolder()],
         ["menu:export_merge_h", () => exportMerged("horizontal")],
         ["menu:export_merge_v", () => exportMerged("vertical")],
+        ["menu:export_video", () => exportVideo()],
         ["menu:zoom_in", () => {
           const idx = useViewStore.getState().zoomIndex;
           useViewStore.getState().setZoomIndex(clamp(idx + 1, 0, ZOOM_STEPS.length - 1));

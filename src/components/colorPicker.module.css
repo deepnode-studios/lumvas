@@ -28,7 +28,7 @@
   width: 16px;
   height: 16px;
   border-radius: 4px;
-  border: 1px solid rgba(0, 0, 0, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   flex-shrink: 0;
 }
 
@@ -38,7 +38,7 @@
   border-radius: 4px;
   border: 1px dashed var(--input-border);
   flex-shrink: 0;
-  background: repeating-conic-gradient(#eee 0% 25%, #fff 0% 50%) 0 0 / 8px 8px;
+  background: repeating-conic-gradient(#333 0% 25%, #222 0% 50%) 0 0 / 8px 8px;
 }
 
 .label {
@@ -66,10 +66,10 @@
   min-width: 200px;
   max-height: 320px;
   overflow-y: auto;
-  background: #fff;
-  border: 1px solid var(--panel-border);
+  background: #2a2a2e;
+  border: 1px solid #3a3a3e;
   border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   z-index: 10000;
   padding: 4px;
 }
@@ -115,16 +115,16 @@
 }
 
 .option:hover {
-  background: rgba(0, 0, 0, 0.04);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .optionActive {
-  background: rgba(0, 113, 227, 0.08);
+  background: rgba(10, 132, 255, 0.15);
   font-weight: 600;
 }
 
 .optionActive:hover {
-  background: rgba(0, 113, 227, 0.12);
+  background: rgba(10, 132, 255, 0.2);
 }
 
 .tokenId {

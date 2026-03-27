@@ -18,7 +18,7 @@
   padding: 6px 8px;
   border: 1px solid var(--input-border);
   border-radius: 8px;
-  background: #fff;
+  background: #1a1a1e;
 }
 
 .swatch {
@@ -107,7 +107,7 @@
 .presetBlock {
   border: 1px solid var(--input-border);
   border-radius: 8px;
-  background: #fff;
+  background: #1a1a1e;
   overflow: hidden;
 }
 

@@ -11,29 +11,17 @@
     "dialog:default",
     "fs:default",
     {
-      "identifier": "fs:allow-read-text-file",
-      "allow": [{ "path": "**" }]
+      "identifier": "fs:scope",
+      "allow": [{ "path": "$HOME/**" }, { "path": "/tmp/**" }, { "path": "**" }]
     },
-    {
-      "identifier": "fs:allow-write-text-file",
-      "allow": [{ "path": "**" }]
-    },
-    {
-      "identifier": "fs:allow-write-file",
-      "allow": [{ "path": "**" }]
-    },
-    {
-      "identifier": "fs:allow-mkdir",
-      "allow": [{ "path": "**" }]
-    },
-    {
-      "identifier": "fs:allow-copy-file",
-      "allow": [{ "path": "**" }]
-    },
-    {
-      "identifier": "fs:allow-exists",
-      "allow": [{ "path": "**" }]
-    },
-    "opener:default"
+    "fs:allow-read-text-file",
+    "fs:allow-read-file",
+    "fs:allow-write-text-file",
+    "fs:allow-write-file",
+    "fs:allow-mkdir",
+    "fs:allow-copy-file",
+    "fs:allow-exists",
+    "opener:default",
+    "shell:default"
   ]
 }

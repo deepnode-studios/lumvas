@@ -107,9 +107,13 @@ export async function saveProject(
       asset.data = await writeMediaFromDataUri(projectDir, asset.data, "asset");
     }
   }
-  for (const slide of clone.content?.slides ?? []) {
-    await extractElementMedia(projectDir, slide.elements ?? []);
+  // Extract media from slide elements (slide mode only)
+  if (clone.contentType !== "video" && "slides" in clone.content) {
+    for (const slide of (clone.content as { slides: any[] }).slides ?? []) {
+      await extractElementMedia(projectDir, slide.elements ?? []);
+    }
   }
+  // TODO: Extract media from video scenes when video mode is implemented
 
   await writeTextFile(`${projectDir}/project.json`, JSON.stringify(clone, null, 2));
 }

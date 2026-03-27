@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useLumvasStore } from "@/store/useLumvasStore";
+import { useLumvasStore, selectSlideContent } from "@/store/useLumvasStore";
 import { useTemplateStore } from "@/store/useTemplateStore";
 import { TEMPLATE_CATEGORIES } from "@/store/templates";
 import { instantiateTemplate, slideToTemplate } from "@/store/templates";
@@ -66,7 +66,7 @@ interface TemplateGalleryProps {
 
 export function TemplateGallery({ open, onClose, saveSlideId }: TemplateGalleryProps) {
   const addSlide = useLumvasStore((s) => s.addSlide);
-  const slides = useLumvasStore((s) => s.content.slides);
+  const slides = useLumvasStore((s) => selectSlideContent(s).slides);
   const allTemplates = useTemplateStore((s) => s.allTemplates);
   const addCustomTemplate = useTemplateStore((s) => s.addCustomTemplate);
   const removeCustomTemplate = useTemplateStore((s) => s.removeCustomTemplate);

@@ -26,10 +26,10 @@
 .popover {
   position: fixed;
   z-index: 10000;
-  background: #fff;
-  border: 1px solid var(--input-border);
+  background: #2a2a2e;
+  border: 1px solid #3a3a3e;
   border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   display: flex;
   flex-direction: column;
   max-height: 380px;
@@ -43,10 +43,11 @@
   font-size: 13px;
   outline: none;
   background: transparent;
+  color: var(--text-primary);
 }
 
 .search:focus {
-  background: #fafafa;
+  background: #1a1a1e;
 }
 
 .categories {
@@ -73,7 +74,7 @@
 }
 
 .catBtn:hover {
-  background: #f0f0f0;
+  background: #333;
 }
 
 .catActive {
@@ -105,12 +106,12 @@
 }
 
 .iconBtn:hover {
-  background: #f0f0f0;
+  background: #333;
   border-color: var(--input-border);
 }
 
 .iconActive {
-  background: #e8f0fe !important;
+  background: rgba(10, 132, 255, 0.15) !important;
   border-color: var(--accent) !important;
   color: var(--accent) !important;
 }

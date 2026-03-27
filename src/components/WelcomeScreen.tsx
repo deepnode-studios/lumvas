@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useFileStore, getAutoSave, clearAutoSave, type AutoSaveData } from "@/store/useFileStore";
-import { useLumvasStore, DEFAULT_DOC } from "@/store/useLumvasStore";
+import { useLumvasStore, DEFAULT_DOC, DOCUMENT_SIZES } from "@/store/useLumvasStore";
+import type { VideoDocument } from "@/types/schema";
 import { validateLumvasDocument } from "@/utils/validateDocument";
 import styles from "./welcomeScreen.module.css";
 
@@ -20,6 +21,47 @@ export function WelcomeScreen() {
 
   const handleStartDemo = () => {
     useLumvasStore.getState().importDocument(structuredClone(DEFAULT_DOC));
+    setDirty(false);
+    useFileStore.getState().setAppMode("workspace");
+  };
+
+  const handleNewVideo = () => {
+    const doc: VideoDocument = {
+      contentType: "video",
+      documentSize: DOCUMENT_SIZES[3], // Landscape 16:9
+      language: "en",
+      assets: { items: [] },
+      theme: {
+        backgroundColor: "#0d1117",
+        primaryColor: "#e6edf3",
+        secondaryColor: "#8a2be2",
+        fontFamily: "Inter, sans-serif",
+        fonts: [
+          { id: "header", label: "Header", value: "Inter, sans-serif" },
+          { id: "body", label: "Body", value: "Inter, sans-serif" },
+        ],
+        fontSize: 24,
+        fontWeight: 400,
+        borderRadius: 12,
+        palette: [],
+      },
+      content: {
+        scenes: [{
+          id: "scene-1",
+          durationMs: 5000,
+          alignItems: "center",
+          justifyContent: "center",
+          direction: "column",
+          padding: 80,
+          gap: 24,
+          elements: [],
+        }],
+        audioTracks: [],
+        captionTracks: [],
+        settings: { fps: 30, format: "mp4", codec: "h264", quality: "standard" },
+      },
+    };
+    useLumvasStore.getState().importDocument(doc);
     setDirty(false);
     useFileStore.getState().setAppMode("workspace");
   };
@@ -70,14 +112,18 @@ export function WelcomeScreen() {
         {/* Header */}
         <div className={styles.titleArea}>
           <h1 className={styles.title}>Lumvas</h1>
-          <p className={styles.subtitle}>Visual Carousel Builder</p>
+          <p className={styles.subtitle}>Visual Media Suite</p>
         </div>
 
         {/* Actions */}
         <div className={styles.actions}>
           <button className={styles.actionBtnPrimary} onClick={newDocument}>
             <span className={styles.actionIcon}>+</span>
-            New Empty Project
+            New Carousel
+          </button>
+          <button className={styles.actionBtnPrimary} onClick={handleNewVideo} style={{ background: "#8a2be2" }}>
+            <span className={styles.actionIcon}>▶</span>
+            New Video
           </button>
           <button className={styles.actionBtn} onClick={handleStartDemo}>
             <span className={styles.actionIcon}>◆</span>
@@ -85,7 +131,7 @@ export function WelcomeScreen() {
           </button>
           <button className={styles.actionBtn} onClick={openFile}>
             <span className={styles.actionIcon}>↗</span>
-            Open File…
+            Open Project…
           </button>
         </div>
 

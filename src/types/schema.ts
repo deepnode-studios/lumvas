@@ -201,12 +201,242 @@ export interface ContentNode {
   slides: SlideContent[];
 }
 
-export interface LumvasDocument {
+/* ─── Video / Motion types ─── */
+
+/** Milliseconds from video or scene start */
+export type TimeMs = number;
+
+export interface TimeRange {
+  startMs: TimeMs;
+  endMs: TimeMs;
+}
+
+/* Easing */
+
+export type EasingPreset =
+  | "linear"
+  | "ease-in"
+  | "ease-out"
+  | "ease-in-out"
+  | "spring"
+  | "bounce";
+
+export interface CubicBezierEasing {
+  type: "cubic-bezier";
+  x1: number; y1: number;
+  x2: number; y2: number;
+}
+
+export type Easing = EasingPreset | CubicBezierEasing;
+
+/* Animation presets */
+
+export type AnimationPreset =
+  | "none"
+  | "fade-in" | "fade-out"
+  | "slide-up" | "slide-down" | "slide-left" | "slide-right"
+  | "scale-in" | "scale-out"
+  | "drop-in" | "pop-in"
+  | "typewriter"
+  | "blur-in" | "blur-out"
+  | "wipe-left" | "wipe-right"
+  | "zoom-in" | "zoom-out";
+
+export interface AnimationConfig {
+  preset: AnimationPreset;
+  durationMs: number;
+  delayMs?: number;
+  easing?: Easing;
+}
+
+/* Keyframes for continuous property animation */
+
+export interface KeyframeProperties {
+  x?: number;        // px offset from layout position
+  y?: number;
+  scale?: number;
+  scaleX?: number;
+  scaleY?: number;
+  rotation?: number; // degrees
+  opacity?: number;  // 0–1
+  blur?: number;     // px
+}
+
+export interface Keyframe {
+  /** 0.0 = element enter time, 1.0 = element exit time */
+  progress: number;
+  properties: KeyframeProperties;
+  easing?: Easing;
+}
+
+/* Element timing */
+
+export interface ElementTiming {
+  /** When this element appears, relative to scene start (ms) */
+  enterMs: TimeMs;
+  /** When this element disappears. Omit = stays until scene end. */
+  exitMs?: TimeMs;
+  enterAnimation?: AnimationConfig;
+  exitAnimation?: AnimationConfig;
+  keyframes?: Keyframe[];
+}
+
+/** A scene element: SlideElement + timing/animation metadata */
+export interface SceneElement extends SlideElement {
+  timing: ElementTiming;
+  children?: SceneElement[];
+}
+
+/* Scene transitions */
+
+export type TransitionPreset =
+  | "none"
+  | "crossfade"
+  | "slide-left" | "slide-right" | "slide-up" | "slide-down"
+  | "zoom"
+  | "wipe-left" | "wipe-right"
+  | "dissolve";
+
+export interface SceneTransition {
+  preset: TransitionPreset;
+  durationMs: number;
+  easing?: Easing;
+}
+
+/* Audio tracks */
+
+export type AudioTrackType = "narration" | "music" | "sfx";
+
+export interface AudioTrack {
+  id: string;
+  type: AudioTrackType;
+  label: string;
+  /** Relative path in media/ folder */
+  src: string;
+  /** When this track starts playing (ms from video start) */
+  startMs: TimeMs;
+  /** Duration of the audio clip in ms */
+  durationMs: number;
+  /** Trim: skip this many ms from start of audio file */
+  trimStartMs?: number;
+  /** Trim: stop playback at this point in the audio file */
+  trimEndMs?: number;
+  /** 0.0–1.0 */
+  volume: number;
+  fadeInMs?: number;
+  fadeOutMs?: number;
+}
+
+/* Captions / subtitles */
+
+export type CaptionStyle =
+  | "default"
+  | "karaoke"       // highlight word-by-word as spoken
+  | "word-reveal"   // reveal words one at a time
+  | "line-reveal"   // reveal line at a time
+  | "bounce"        // each word bounces in
+  | "typewriter";   // character-by-character
+
+export interface CaptionWord {
+  text: string;
+  startMs: TimeMs;
+  endMs: TimeMs;
+  confidence?: number; // 0–1, from Whisper
+}
+
+export interface CaptionSegment {
+  id: string;
+  words: CaptionWord[];
+  speaker?: string; // from diarization
+}
+
+export interface CaptionAppearance {
+  fontId?: string;
+  fontSize?: number;
+  fontWeight?: number;
+  color?: string;
+  backgroundColor?: string;
+  backgroundOpacity?: number;
+  position: "bottom" | "top" | "center";
+  padding?: number;
+  highlightColor?: string; // for karaoke mode
+}
+
+export interface CaptionTrack {
+  id: string;
+  label: string;
+  language: string;
+  segments: CaptionSegment[];
+  style: CaptionStyle;
+  appearance: CaptionAppearance;
+}
+
+/* Scene */
+
+export interface VideoScene {
+  id: string;
+  /** Scene duration in milliseconds */
+  durationMs: number;
+  /** Layout (same props as SlideContent) */
+  alignItems?: FlexAlign;
+  justifyContent?: FlexJustify;
+  direction?: FlexDirection;
+  padding?: number;
+  gap?: number;
+  style?: SlideStyle;
+  /** Elements with timing/animation */
+  elements: SceneElement[];
+  /** Transition to the next scene */
+  transition?: SceneTransition;
+}
+
+/* Video settings */
+
+export interface VideoSettings {
+  fps: 24 | 30 | 60;
+  format: "mp4" | "webm";
+  codec: "h264" | "vp9";
+  quality: "draft" | "standard" | "high";
+}
+
+/* Video content */
+
+export interface VideoContentNode {
+  scenes: VideoScene[];
+  audioTracks: AudioTrack[];
+  captionTracks: CaptionTrack[];
+  settings: VideoSettings;
+}
+
+/* ─── Document (discriminated union) ─── */
+
+interface LumvasDocumentBase {
   documentSize: DocumentSize;
-  language?: string; // BCP 47 language tag (e.g. "en", "tr", "de") — used for locale-aware text rendering
+  language?: string; // BCP 47 language tag (e.g. "en", "tr", "de")
   assets: AssetNode;
   theme: ThemeNode;
+}
+
+export interface SlideDocument extends LumvasDocumentBase {
+  contentType?: "slides"; // optional for backward compat (old docs lack this field)
   content: ContentNode;
+}
+
+export interface VideoDocument extends LumvasDocumentBase {
+  contentType: "video";
+  content: VideoContentNode;
+}
+
+export type LumvasDocument = SlideDocument | VideoDocument;
+
+/** Type guard: is this a video document? */
+export function isVideoDocument(doc: LumvasDocument): doc is VideoDocument {
+  return doc.contentType === "video";
+}
+
+/** Type guard: is this a slide document? */
+export function isSlideDocument(doc: LumvasDocument): doc is SlideDocument {
+  return doc.contentType !== "video";
 }
 
 /* ─── Templates ─── */

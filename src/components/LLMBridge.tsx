@@ -4,7 +4,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useLumvasStore } from "@/store/useLumvasStore";
 import { useTemplateStore } from "@/store/useTemplateStore";
 import { BUILT_IN_TEMPLATES, describeTemplatesForLLM } from "@/store/templates";
-import type { LumvasDocument } from "@/types/schema";
+import type { LumvasDocument, SlideElement } from "@/types/schema";
+import { isSlideDocument } from "@/types/schema";
 import { validateLumvasDocument } from "@/utils/validateDocument";
 import { JsonEditor } from "./JsonEditor";
 import styles from "@/styles/workspace.module.css";
@@ -51,7 +52,7 @@ function stripBinaryFromDoc(doc: LumvasDocument): LumvasDocument {
   }
 
   // Strip image element content (including inside groups)
-  function stripElements(elements: LumvasDocument["content"]["slides"][0]["elements"]) {
+  function stripElements(elements: SlideElement[]) {
     for (const el of elements) {
       if (el.type === "image" && el.content && isDataUri(el.content)) {
         el.content = dataUriMeta(el.content);
@@ -61,8 +62,10 @@ function stripBinaryFromDoc(doc: LumvasDocument): LumvasDocument {
       }
     }
   }
-  for (const slide of stripped.content.slides) {
-    stripElements(slide.elements);
+  if (isSlideDocument(stripped)) {
+    for (const slide of stripped.content.slides) {
+      stripElements(slide.elements);
+    }
   }
 
   return stripped;
@@ -88,19 +91,22 @@ function mergeSlice(
   tab: EditorTab,
   parsed: unknown
 ): LumvasDocument | null {
+  const d = doc as unknown as Record<string, unknown>;
   switch (tab) {
     case "content": {
+      if (!parsed || typeof parsed !== "object") return null;
       const c = parsed as Record<string, unknown>;
-      if (!c || !Array.isArray(c.slides)) return null;
-      return { ...doc, content: parsed as LumvasDocument["content"] };
+      // Validate: slides doc needs slides array, video doc needs scenes array
+      if (isSlideDocument(doc) && !Array.isArray(c.slides)) return null;
+      return { ...d, content: parsed } as unknown as LumvasDocument;
     }
     case "theme": {
       if (!parsed || typeof parsed !== "object") return null;
-      return { ...doc, theme: parsed as LumvasDocument["theme"] };
+      return { ...d, theme: parsed } as unknown as LumvasDocument;
     }
     case "assets": {
       if (!parsed || typeof parsed !== "object") return null;
-      return { ...doc, assets: parsed as LumvasDocument["assets"] };
+      return { ...d, assets: parsed } as unknown as LumvasDocument;
     }
     case "full": {
       if (!validateLumvasDocument(parsed as unknown)) return null;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useEffect, useCallback } from "react";
-import { useLumvasStore } from "@/store/useLumvasStore";
+import { useLumvasStore, selectSlideContent } from "@/store/useLumvasStore";
 import { useFileStore } from "@/store/useFileStore";
 import { useViewStore, type ViewMode } from "@/store/useViewStore";
 import { SlideRenderer } from "@/components/slides/SlideRenderer";
@@ -15,7 +15,7 @@ function clamp(val: number, min: number, max: number) {
 }
 
 export function RenderCanvas() {
-  const slides = useLumvasStore((s) => s.content.slides);
+  const slides = useLumvasStore((s) => selectSlideContent(s).slides);
   const theme = useLumvasStore((s) => s.theme);
   const assets = useLumvasStore((s) => s.assets.items);
   const size = useLumvasStore((s) => s.documentSize);

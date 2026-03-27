@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useLumvasStore, DOCUMENT_SIZES, FONT_OPTIONS } from "@/store/useLumvasStore";
+import { useLumvasStore, selectSlideContent, DOCUMENT_SIZES, FONT_OPTIONS } from "@/store/useLumvasStore";
 import { PanelSection } from "./PanelSection";
 import { ColorPicker } from "./ColorPicker";
 import { GradientEditor } from "./GradientEditor";
@@ -221,7 +221,7 @@ function BackgroundPresetRow({ preset }: { preset: BackgroundPreset }) {
   const [editing, setEditing] = useState(false);
 
   // Count how many slides use this preset
-  const slides = useLumvasStore((s) => s.content.slides);
+  const slides = useLumvasStore((s) => selectSlideContent(s).slides);
   const usageCount = slides.filter(
     (sl) => sl.style?.backgroundPresetId === preset.id
   ).length;

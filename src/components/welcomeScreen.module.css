@@ -3,23 +3,23 @@
   align-items: center;
   justify-content: center;
   height: 100vh;
-  background: #f0f0f3;
+  background: #111113;
 }
 
 .card {
   width: 480px;
   max-height: 90vh;
   overflow-y: auto;
-  background: #ffffff;
+  background: #1d1d1f;
   border-radius: 16px;
-  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.15);
   padding: 40px;
 }
 
 /* Recovery banner */
 .recoveryBanner {
-  background: #fffbeb;
-  border: 1px solid #f5d76e;
+  background: #2a2210;
+  border: 1px solid #5c4a1a;
   border-radius: 10px;
   padding: 14px 16px;
   margin-bottom: 28px;
@@ -31,12 +31,12 @@
   gap: 2px;
   margin-bottom: 10px;
   font-size: 13px;
-  color: #92750a;
+  color: #d4a017;
 }
 
 .recoveryText strong {
   font-size: 14px;
-  color: #7c6400;
+  color: #e5c84e;
 }
 
 .recoveryActions {
@@ -49,27 +49,27 @@
   font-size: 13px;
   font-weight: 600;
   color: #fff;
-  background: #d4a017;
+  background: #b8900f;
   border: none;
   border-radius: 6px;
 }
 
 .recoverBtn:hover {
-  background: #b8900f;
+  background: #d4a017;
 }
 
 .dismissBtn {
   padding: 6px 14px;
   font-size: 13px;
   font-weight: 500;
-  color: #92750a;
+  color: #d4a017;
   background: none;
-  border: 1px solid #e5c84e;
+  border: 1px solid #5c4a1a;
   border-radius: 6px;
 }
 
 .dismissBtn:hover {
-  background: #fff8dd;
+  background: #33291a;
 }
 
 /* Title area */
@@ -125,13 +125,13 @@
 
 .actionBtn {
   color: var(--text-primary);
-  background: #fff;
+  background: #2a2a2e;
   border: 1px solid var(--input-border);
 }
 
 .actionBtn:hover {
-  background: #f5f5f7;
-  border-color: #bbb;
+  background: #333;
+  border-color: #555;
 }
 
 .actionIcon {
@@ -173,7 +173,7 @@
 }
 
 .recentItem:hover {
-  background: #f5f5f7;
+  background: #2a2a2e;
 }
 
 .recentFileBtn {

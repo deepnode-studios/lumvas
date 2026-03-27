@@ -9,7 +9,7 @@
 }
 
 .modal {
-  background: #fff;
+  background: #1d1d1f;
   border-radius: 16px;
   width: min(900px, 92vw);
   max-height: 85vh;
@@ -46,7 +46,7 @@
 }
 
 .close:hover {
-  background: rgba(0, 0, 0, 0.06);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 /* Category tabs */
@@ -63,14 +63,14 @@
   font-weight: 500;
   border: 1px solid var(--input-border);
   border-radius: 20px;
-  background: #fff;
+  background: #2a2a2e;
   color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .catBtn:hover {
-  background: #f5f5f7;
+  background: #333;
 }
 
 .catBtnActive {
@@ -101,18 +101,18 @@
   transition: all 0.15s;
   display: flex;
   flex-direction: column;
-  background: #fff;
+  background: #222226;
 }
 
 .card:hover {
   border-color: var(--accent);
-  box-shadow: 0 4px 20px rgba(0, 113, 227, 0.12);
+  box-shadow: 0 4px 20px rgba(10, 132, 255, 0.15);
 }
 
 .cardPreview {
   aspect-ratio: 1;
   overflow: hidden;
-  background: #f5f5f7;
+  background: #1a1a1e;
   position: relative;
 }
 
@@ -141,7 +141,7 @@
 .cardCategory {
   font-size: 11px;
   color: var(--text-secondary);
-  background: rgba(0, 0, 0, 0.04);
+  background: rgba(255, 255, 255, 0.06);
   padding: 2px 8px;
   border-radius: 10px;
   white-space: nowrap;
@@ -168,7 +168,7 @@
 }
 
 .cardDeleteBtn:hover {
-  background: rgba(255, 59, 48, 0.1);
+  background: rgba(255, 69, 58, 0.12);
   color: var(--danger);
 }
 
@@ -178,7 +178,7 @@
   gap: 8px;
   padding: 16px 24px;
   border-top: 1px solid var(--panel-border);
-  background: #fafafa;
+  background: #1a1a1e;
   border-radius: 0 0 16px 16px;
 }
 
@@ -188,13 +188,14 @@
   font-size: 13px;
   border: 1px solid var(--input-border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--input-bg);
+  color: var(--text-primary);
   outline: none;
 }
 
 .saveInput:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(0, 113, 227, 0.15);
+  box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.25);
 }
 
 .saveSelect {
@@ -202,7 +203,8 @@
   font-size: 13px;
   border: 1px solid var(--input-border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--input-bg);
+  color: var(--text-primary);
   outline: none;
 }
 

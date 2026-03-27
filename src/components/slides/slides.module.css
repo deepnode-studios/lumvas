@@ -3,6 +3,8 @@
   cursor: default;
   word-break: break-word;
   white-space: pre-wrap;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .imagePlaceholder {

@@ -740,6 +740,8 @@ export const SlideRenderer = forwardRef<HTMLDivElement, SlideProps>(
       overflow: "hidden",
       position: "relative",
       flexShrink: 0,
+      WebkitUserSelect: "none",
+      userSelect: "none",
     };
 
     // Pattern layer

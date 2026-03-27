@@ -5,5 +5,11 @@ export function validateLumvasDocument(obj: unknown): obj is LumvasDocument {
   const d = obj as Record<string, unknown>;
   if (!d.assets || !d.theme || !d.content) return false;
   const c = d.content as Record<string, unknown>;
+
+  if (d.contentType === "video") {
+    // Video: needs scenes array
+    return Array.isArray(c.scenes);
+  }
+  // Slides (default): needs slides array
   return Array.isArray(c.slides);
 }

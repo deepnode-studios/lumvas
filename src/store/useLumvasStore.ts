@@ -3,14 +3,24 @@ import type {
   LumvasDocument,
   DocumentSize,
   ThemeNode,
+  AssetNode,
   AssetItem,
   ColorToken,
   FontToken,
   BackgroundPreset,
+  ContentNode,
   SlideContent,
   SlideElement,
   SlideStyle,
   ElementType,
+  VideoContentNode,
+  VideoScene,
+  SceneElement,
+  ElementTiming,
+  AudioTrack,
+  CaptionTrack,
+  CaptionSegment,
+  VideoSettings,
 } from "@/types/schema";
 
 function uid(): string {
@@ -457,6 +467,7 @@ import defaultDocJson from "@/data/defaultDocument.json";
 export const DEFAULT_DOC: LumvasDocument = defaultDocJson as unknown as LumvasDocument;
 
 export const EMPTY_DOC: LumvasDocument = {
+  contentType: "slides",
   documentSize: DOCUMENT_SIZES[0],
   language: "en",
   assets: { items: [] },
@@ -468,7 +479,13 @@ export const EMPTY_DOC: LumvasDocument = {
 
 /* ─── Undo / Redo history ─── */
 
-type DocSnapshot = Pick<LumvasDocument, "documentSize" | "assets" | "theme" | "content">;
+interface DocSnapshot {
+  documentSize: DocumentSize;
+  assets: AssetNode;
+  theme: ThemeNode;
+  contentType?: "slides" | "video";
+  content: ContentNode | VideoContentNode;
+}
 
 const MAX_HISTORY = 50;
 const undoStack: DocSnapshot[] = [];
@@ -479,13 +496,22 @@ function takeSnapshot(s: DocSnapshot) {
     documentSize: s.documentSize,
     assets: s.assets,
     theme: s.theme,
+    contentType: s.contentType,
     content: s.content,
   }));
   if (undoStack.length > MAX_HISTORY) undoStack.shift();
   redoStack.length = 0; // clear redo on new action
 }
 
-interface LumvasStore extends LumvasDocument {
+interface LumvasStore {
+  // Document fields (covers both slide and video documents)
+  documentSize: DocumentSize;
+  language?: string;
+  assets: AssetNode;
+  theme: ThemeNode;
+  contentType?: "slides" | "video";
+  content: ContentNode | VideoContentNode;
+
   setDocumentSize: (size: DocumentSize) => void;
   setLanguage: (lang: string) => void;
   updateTheme: (patch: Partial<ThemeNode>) => void;
@@ -525,6 +551,32 @@ interface LumvasStore extends LumvasDocument {
   moveElement: (slideId: string, elementId: string, targetParentId: string | null, targetIndex: number) => void;
   findElementParentId: (slideId: string, elementId: string) => string | null;
 
+  // ── Video mode: Scenes ──
+  addScene: (scene?: VideoScene) => void;
+  updateScene: (id: string, patch: Partial<VideoScene>) => void;
+  removeScene: (id: string) => void;
+  reorderScenes: (from: number, to: number) => void;
+
+  // Video mode: Scene elements
+  addSceneElement: (sceneId: string, element: SceneElement) => void;
+  updateSceneElement: (sceneId: string, elementId: string, patch: Partial<SceneElement>) => void;
+  removeSceneElement: (sceneId: string, elementId: string) => void;
+  updateElementTiming: (sceneId: string, elementId: string, timing: Partial<ElementTiming>) => void;
+
+  // Video mode: Audio tracks
+  addAudioTrack: (track: AudioTrack) => void;
+  updateAudioTrack: (id: string, patch: Partial<AudioTrack>) => void;
+  removeAudioTrack: (id: string) => void;
+
+  // Video mode: Caption tracks
+  addCaptionTrack: (track: CaptionTrack) => void;
+  updateCaptionTrack: (id: string, patch: Partial<CaptionTrack>) => void;
+  removeCaptionTrack: (id: string) => void;
+  setCaptionSegments: (trackId: string, segments: CaptionSegment[]) => void;
+
+  // Video mode: Settings
+  updateVideoSettings: (patch: Partial<VideoSettings>) => void;
+
   // LLM bridge
   getDocument: () => LumvasDocument;
   importDocument: (doc: LumvasDocument) => void;
@@ -538,8 +590,25 @@ interface LumvasStore extends LumvasDocument {
   // Selection
   activeSlideId: string | null;
   setActiveSlide: (id: string | null) => void;
+  activeSceneId: string | null;
+  setActiveScene: (id: string | null) => void;
   activeElementId: string | null;
   setActiveElement: (id: string | null) => void;
+}
+
+/** Helper: access slide content (safe for slide mode) */
+function getSlideContent(state: { content: ContentNode | VideoContentNode }): ContentNode {
+  return state.content as ContentNode;
+}
+
+/** Typed selector: use in components to get slide content */
+export function selectSlideContent(state: LumvasStore): ContentNode {
+  return state.content as ContentNode;
+}
+
+/** Typed selector: use in components to get video content */
+export function selectVideoContent(state: LumvasStore): VideoContentNode {
+  return state.content as VideoContentNode;
 }
 
 export const useLumvasStore = create<LumvasStore>((_set, get) => {
@@ -554,7 +623,8 @@ export const useLumvasStore = create<LumvasStore>((_set, get) => {
 
   return {
   ...DEFAULT_DOC,
-  activeSlideId: DEFAULT_DOC.content.slides[0]?.id ?? null,
+  activeSlideId: getSlideContent(DEFAULT_DOC).slides[0]?.id ?? null,
+  activeSceneId: null,
   activeElementId: null,
 
   setDocumentSize: (size) => set({ documentSize: size }),
@@ -692,7 +762,7 @@ export const useLumvasStore = create<LumvasStore>((_set, get) => {
   addSlide: (slide) => {
     const s = slide ?? createTextSlide();
     set((st) => ({
-      content: { slides: [...st.content.slides, s] },
+      content: { slides: [...getSlideContent(st).slides, s] },
       activeSlideId: s.id,
       activeElementId: null,
     }));
@@ -701,7 +771,7 @@ export const useLumvasStore = create<LumvasStore>((_set, get) => {
   updateSlide: (id, patch) =>
     set((s) => ({
       content: {
-        slides: s.content.slides.map((sl) =>
+        slides: getSlideContent(s).slides.map((sl) =>
           sl.id === id ? { ...sl, ...patch } : sl
         ),
       },
@@ -709,7 +779,7 @@ export const useLumvasStore = create<LumvasStore>((_set, get) => {
 
   removeSlide: (id) =>
     set((s) => {
-      const slides = s.content.slides.filter((sl) => sl.id !== id);
+      const slides = getSlideContent(s).slides.filter((sl) => sl.id !== id);
       return {
         content: { slides },
         activeSlideId:
@@ -720,7 +790,7 @@ export const useLumvasStore = create<LumvasStore>((_set, get) => {
 
   reorderSlides: (from, to) =>
     set((s) => {
-      const slides = [...s.content.slides];
+      const slides = [...getSlideContent(s).slides];
       const [moved] = slides.splice(from, 1);
       slides.splice(to, 0, moved);
       return { content: { slides } };
@@ -731,7 +801,7 @@ export const useLumvasStore = create<LumvasStore>((_set, get) => {
   addElement: (slideId, element, parentId) =>
     set((s) => ({
       content: {
-        slides: s.content.slides.map((sl) =>
+        slides: getSlideContent(s).slides.map((sl) =>
           sl.id === slideId
             ? { ...sl, elements: addElementDeep(sl.elements, parentId ?? null, element) }
             : sl
@@ -743,7 +813,7 @@ export const useLumvasStore = create<LumvasStore>((_set, get) => {
   updateElement: (slideId, elementId, patch) =>
     set((s) => ({
       content: {
-        slides: s.content.slides.map((sl) =>
+        slides: getSlideContent(s).slides.map((sl) =>
           sl.id === slideId
             ? { ...sl, elements: updateElementDeep(sl.elements, elementId, patch) }
             : sl
@@ -754,7 +824,7 @@ export const useLumvasStore = create<LumvasStore>((_set, get) => {
   removeElement: (slideId, elementId) =>
     set((s) => ({
       content: {
-        slides: s.content.slides.map((sl) =>
+        slides: getSlideContent(s).slides.map((sl) =>
           sl.id === slideId
             ? { ...sl, elements: removeElementDeep(sl.elements, elementId) }
             : sl
@@ -767,7 +837,7 @@ export const useLumvasStore = create<LumvasStore>((_set, get) => {
   reorderElements: (slideId, from, to, parentId) =>
     set((s) => ({
       content: {
-        slides: s.content.slides.map((sl) => {
+        slides: getSlideContent(s).slides.map((sl) => {
           if (sl.id !== slideId) return sl;
           return { ...sl, elements: reorderElementsDeep(sl.elements, parentId ?? null, from, to) };
         }),
@@ -777,7 +847,7 @@ export const useLumvasStore = create<LumvasStore>((_set, get) => {
   moveElement: (slideId, elementId, targetParentId, targetIndex) =>
     set((s) => ({
       content: {
-        slides: s.content.slides.map((sl) => {
+        slides: getSlideContent(s).slides.map((sl) => {
           if (sl.id !== slideId) return sl;
           // Extract the element from its current position
           const { tree, extracted } = extractElement(sl.elements, elementId);
@@ -789,55 +859,218 @@ export const useLumvasStore = create<LumvasStore>((_set, get) => {
     })),
 
   findElementParentId: (slideId, elementId) => {
-    const slide = get().content.slides.find((s) => s.id === slideId);
+    const slide = getSlideContent(get()).slides.find((s) => s.id === slideId);
     if (!slide) return null;
     return findParentId(slide.elements, elementId);
+  },
+
+  // ── Video mode: Scenes ──
+
+  addScene: (scene) => {
+    const s = scene ?? {
+      id: uid(),
+      durationMs: 5000,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+      direction: "column" as const,
+      padding: 80,
+      gap: 24,
+      elements: [],
+    };
+    const vc = get().content as VideoContentNode;
+    set({ content: { ...vc, scenes: [...vc.scenes, s] } });
+  },
+
+  updateScene: (id, patch) => {
+    const vc = get().content as VideoContentNode;
+    set({ content: { ...vc, scenes: vc.scenes.map((sc) => sc.id === id ? { ...sc, ...patch } : sc) } });
+  },
+
+  removeScene: (id) => {
+    const vc = get().content as VideoContentNode;
+    set({ content: { ...vc, scenes: vc.scenes.filter((sc) => sc.id !== id) } });
+  },
+
+  reorderScenes: (from, to) => {
+    const vc = get().content as VideoContentNode;
+    const scenes = [...vc.scenes];
+    const [moved] = scenes.splice(from, 1);
+    scenes.splice(to, 0, moved);
+    set({ content: { ...vc, scenes } });
+  },
+
+  // Video mode: Scene elements
+
+  addSceneElement: (sceneId, element) => {
+    const vc = get().content as VideoContentNode;
+    set({
+      content: {
+        ...vc,
+        scenes: vc.scenes.map((sc) =>
+          sc.id === sceneId ? { ...sc, elements: [...sc.elements, element] } : sc,
+        ),
+      },
+    });
+  },
+
+  updateSceneElement: (sceneId, elementId, patch) => {
+    const vc = get().content as VideoContentNode;
+    set({
+      content: {
+        ...vc,
+        scenes: vc.scenes.map((sc) =>
+          sc.id === sceneId
+            ? { ...sc, elements: sc.elements.map((el) => el.id === elementId ? { ...el, ...patch } : el) }
+            : sc,
+        ),
+      },
+    });
+  },
+
+  removeSceneElement: (sceneId, elementId) => {
+    const vc = get().content as VideoContentNode;
+    set({
+      content: {
+        ...vc,
+        scenes: vc.scenes.map((sc) =>
+          sc.id === sceneId ? { ...sc, elements: sc.elements.filter((el) => el.id !== elementId) } : sc,
+        ),
+      },
+    });
+  },
+
+  updateElementTiming: (sceneId, elementId, timing) => {
+    const vc = get().content as VideoContentNode;
+    set({
+      content: {
+        ...vc,
+        scenes: vc.scenes.map((sc) =>
+          sc.id === sceneId
+            ? {
+                ...sc,
+                elements: sc.elements.map((el) =>
+                  el.id === elementId ? { ...el, timing: { ...el.timing, ...timing } } : el,
+                ),
+              }
+            : sc,
+        ),
+      },
+    });
+  },
+
+  // Video mode: Audio tracks
+
+  addAudioTrack: (track) => {
+    const vc = get().content as VideoContentNode;
+    set({ content: { ...vc, audioTracks: [...vc.audioTracks, track] } });
+  },
+
+  updateAudioTrack: (id, patch) => {
+    const vc = get().content as VideoContentNode;
+    set({ content: { ...vc, audioTracks: vc.audioTracks.map((t) => t.id === id ? { ...t, ...patch } : t) } });
+  },
+
+  removeAudioTrack: (id) => {
+    const vc = get().content as VideoContentNode;
+    set({ content: { ...vc, audioTracks: vc.audioTracks.filter((t) => t.id !== id) } });
+  },
+
+  // Video mode: Caption tracks
+
+  addCaptionTrack: (track) => {
+    const vc = get().content as VideoContentNode;
+    set({ content: { ...vc, captionTracks: [...vc.captionTracks, track] } });
+  },
+
+  updateCaptionTrack: (id, patch) => {
+    const vc = get().content as VideoContentNode;
+    set({ content: { ...vc, captionTracks: vc.captionTracks.map((t) => t.id === id ? { ...t, ...patch } : t) } });
+  },
+
+  removeCaptionTrack: (id) => {
+    const vc = get().content as VideoContentNode;
+    set({ content: { ...vc, captionTracks: vc.captionTracks.filter((t) => t.id !== id) } });
+  },
+
+  setCaptionSegments: (trackId, segments) => {
+    const vc = get().content as VideoContentNode;
+    set({
+      content: {
+        ...vc,
+        captionTracks: vc.captionTracks.map((t) => t.id === trackId ? { ...t, segments } : t),
+      },
+    });
+  },
+
+  // Video mode: Settings
+
+  updateVideoSettings: (patch) => {
+    const vc = get().content as VideoContentNode;
+    set({ content: { ...vc, settings: { ...vc.settings, ...patch } } });
   },
 
   // ── LLM bridge ──
 
   getDocument: () => {
-    const { documentSize, language, assets, theme, content } = get();
-    return { documentSize, language, assets, theme, content };
+    const { documentSize, language, assets, theme, contentType, content } = get();
+    return { documentSize, language, assets, theme, contentType, content } as LumvasDocument;
   },
 
   importDocument: (doc) => {
-    // Normalize group elements: LLMs may use "elements" instead of "children"
-    // Normalize chart elements: ensure chartData is always an array
-    const normalizeElements = (els: SlideElement[]): SlideElement[] =>
-      els.map((el) => {
-        if (el.type === "group") {
-          const raw = el as SlideElement & { elements?: SlideElement[] };
-          const kids = raw.children ?? raw.elements ?? [];
-          delete raw.elements;
-          return { ...el, children: normalizeElements(kids) };
-        }
-        if (el.type === "chart") {
-          const raw = el as SlideElement & { data?: SlideElement["chartData"] };
-          const chartData = el.chartData ?? raw.data ?? [];
-          delete raw.data;
-          return { ...el, chartData: Array.isArray(chartData) ? chartData : [] };
-        }
-        return el;
-      });
-    const content = {
-      slides: doc.content.slides.map((sl) => ({
-        ...sl,
-        elements: normalizeElements(sl.elements),
-      })),
-    };
+    const isVideo = doc.contentType === "video";
+
     // Skip undo snapshot — importDocument is called on every debounced keystroke
     // in the JSON editor, which would flood the undo stack with intermediate states.
     _skipSnapshot = true;
-    _set({
-      documentSize: doc.documentSize ?? DOCUMENT_SIZES[0],
-      language: doc.language ?? "en",
-      assets: doc.assets,
-      theme: { ...DEFAULT_THEME, ...doc.theme, palette: doc.theme.palette ?? [], fonts: doc.theme.fonts ?? DEFAULT_FONTS, backgroundPresets: doc.theme.backgroundPresets ?? [] },
-      content,
-      activeSlideId: content.slides[0]?.id ?? null,
-      activeElementId: null,
-    });
+
+    if (isVideo) {
+      // Video document: import as-is
+      _set({
+        documentSize: doc.documentSize ?? DOCUMENT_SIZES[0],
+        language: doc.language ?? "en",
+        assets: doc.assets,
+        contentType: "video",
+        theme: { ...DEFAULT_THEME, ...doc.theme, palette: doc.theme.palette ?? [], fonts: doc.theme.fonts ?? DEFAULT_FONTS, backgroundPresets: doc.theme.backgroundPresets ?? [] },
+        content: doc.content,
+        activeSlideId: null,
+        activeElementId: null,
+      });
+    } else {
+      // Slide document: normalize elements
+      const normalizeElements = (els: SlideElement[]): SlideElement[] =>
+        els.map((el) => {
+          if (el.type === "group") {
+            const raw = el as SlideElement & { elements?: SlideElement[] };
+            const kids = raw.children ?? raw.elements ?? [];
+            delete raw.elements;
+            return { ...el, children: normalizeElements(kids) };
+          }
+          if (el.type === "chart") {
+            const raw = el as SlideElement & { data?: SlideElement["chartData"] };
+            const chartData = el.chartData ?? raw.data ?? [];
+            delete raw.data;
+            return { ...el, chartData: Array.isArray(chartData) ? chartData : [] };
+          }
+          return el;
+        });
+      const content: ContentNode = {
+        slides: getSlideContent(doc).slides.map((sl) => ({
+          ...sl,
+          elements: normalizeElements(sl.elements),
+        })),
+      };
+      _set({
+        documentSize: doc.documentSize ?? DOCUMENT_SIZES[0],
+        language: doc.language ?? "en",
+        assets: doc.assets,
+        contentType: "slides",
+        theme: { ...DEFAULT_THEME, ...doc.theme, palette: doc.theme.palette ?? [], fonts: doc.theme.fonts ?? DEFAULT_FONTS, backgroundPresets: doc.theme.backgroundPresets ?? [] },
+        content,
+        activeSlideId: content.slides[0]?.id ?? null,
+        activeElementId: null,
+      });
+    }
+
     _skipSnapshot = false;
   },
 
@@ -851,12 +1084,14 @@ export const useLumvasStore = create<LumvasStore>((_set, get) => {
       documentSize: get().documentSize,
       assets: get().assets,
       theme: get().theme,
+      contentType: get().contentType,
       content: get().content,
     }));
     _skipSnapshot = true;
+    const isVideoSnap = snapshot.contentType === "video";
     _set({
       ...snapshot,
-      activeSlideId: snapshot.content.slides[0]?.id ?? null,
+      activeSlideId: isVideoSnap ? null : getSlideContent(snapshot).slides[0]?.id ?? null,
       activeElementId: null,
     });
     _skipSnapshot = false;
@@ -870,12 +1105,14 @@ export const useLumvasStore = create<LumvasStore>((_set, get) => {
       documentSize: get().documentSize,
       assets: get().assets,
       theme: get().theme,
+      contentType: get().contentType,
       content: get().content,
     }));
     _skipSnapshot = true;
+    const isVideoSnap = snapshot.contentType === "video";
     _set({
       ...snapshot,
-      activeSlideId: snapshot.content.slides[0]?.id ?? null,
+      activeSlideId: isVideoSnap ? null : getSlideContent(snapshot).slides[0]?.id ?? null,
       activeElementId: null,
     });
     _skipSnapshot = false;
@@ -885,6 +1122,7 @@ export const useLumvasStore = create<LumvasStore>((_set, get) => {
   canRedo: () => redoStack.length > 0,
 
   setActiveSlide: (id) => { _skipSnapshot = true; _set({ activeSlideId: id, activeElementId: null }); _skipSnapshot = false; },
+  setActiveScene: (id) => { _skipSnapshot = true; _set({ activeSceneId: id, activeElementId: null }); _skipSnapshot = false; },
   setActiveElement: (id) => { _skipSnapshot = true; _set({ activeElementId: id }); _skipSnapshot = false; },
 };
 });

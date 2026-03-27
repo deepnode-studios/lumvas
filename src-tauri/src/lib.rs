@@ -1,3 +1,6 @@
+mod ffmpeg;
+mod transcribe;
+
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder},
     Emitter, Manager,
@@ -9,6 +12,13 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_shell::init())
+        .invoke_handler(tauri::generate_handler![
+            ffmpeg::mix_audio,
+            ffmpeg::encode_video,
+            ffmpeg::get_audio_duration,
+            transcribe::transcribe_audio,
+        ])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -50,6 +60,9 @@ pub fn run() {
                     .id("export_merge_h").build(app)?)
                 .item(&MenuItemBuilder::new("Export Merged Vertical…")
                     .id("export_merge_v").build(app)?)
+                .separator()
+                .item(&MenuItemBuilder::new("Export Video…")
+                    .id("export_video").accelerator("CmdOrCtrl+Shift+E").build(app)?)
                 .separator()
                 .close_window()
                 .build()?;
@@ -110,7 +123,8 @@ pub fn run() {
                 match id {
                     // File actions → emit to frontend
                     "new" | "open" | "save" | "save_as"
-                    | "export_slides" | "export_merge_h" | "export_merge_v" => {
+                    | "export_slides" | "export_merge_h" | "export_merge_v"
+                    | "export_video" => {
                         let _ = app_handle.emit(&format!("menu:{}", id), ());
                     }
                     // View zoom → emit to frontend
