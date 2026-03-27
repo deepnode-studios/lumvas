@@ -11,12 +11,6 @@
 
 ---
 
-<div align="center">
-  <br/>
-  <img src="docs/sample-output.png" alt="Sample media created entirely by Lumvas — no human modification" width="100%" />
-  <p><i>This layout was rendered entirely by Lumvas from structured JSON — zero manual design work required.</i></p>
-  <br/>
-</div>
 
 ## What is Lumvas?
 
