@@ -141,8 +141,69 @@ function SceneInspector({ scene, sceneIndex }: { scene: VideoScene; sceneIndex: 
             style={{ width: 60, fontSize: 11, padding: "3px 6px" }}
           />
         </Row>
+      </div>
 
-        <div style={{ display: "flex", gap: 6, marginTop: 12 }}>
+      {/* Scene style */}
+      <div className={styles.panelSection}>
+        <SectionTitle>Background</SectionTitle>
+        <Row label="Color">
+          <input
+            type="color"
+            value={scene.style?.backgroundColor ?? "#000000"}
+            onChange={(e) => updateScene(scene.id, { style: { ...scene.style, backgroundColor: e.target.value } })}
+            style={{ width: 28, height: 22, padding: 0, border: "1px solid #3a3a3e", borderRadius: 3, cursor: "pointer" }}
+          />
+          <input
+            type="text"
+            value={scene.style?.backgroundColor ?? ""}
+            onChange={(e) => updateScene(scene.id, { style: { ...scene.style, backgroundColor: e.target.value } })}
+            placeholder="#000000"
+            style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
+          />
+        </Row>
+        <Row label="Gradient">
+          <input
+            type="text"
+            value={scene.style?.backgroundGradient ?? ""}
+            onChange={(e) => updateScene(scene.id, { style: { ...scene.style, backgroundGradient: e.target.value || undefined } })}
+            placeholder="linear-gradient(...)"
+            style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
+          />
+        </Row>
+        <Row label="Primary">
+          <input
+            type="color"
+            value={scene.style?.primaryColor ?? useLumvasStore.getState().theme.primaryColor}
+            onChange={(e) => updateScene(scene.id, { style: { ...scene.style, primaryColor: e.target.value } })}
+            style={{ width: 28, height: 22, padding: 0, border: "1px solid #3a3a3e", borderRadius: 3, cursor: "pointer" }}
+          />
+          <input
+            type="text"
+            value={scene.style?.primaryColor ?? ""}
+            onChange={(e) => updateScene(scene.id, { style: { ...scene.style, primaryColor: e.target.value } })}
+            placeholder="theme default"
+            style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
+          />
+        </Row>
+        <Row label="Secondary">
+          <input
+            type="color"
+            value={scene.style?.secondaryColor ?? useLumvasStore.getState().theme.secondaryColor}
+            onChange={(e) => updateScene(scene.id, { style: { ...scene.style, secondaryColor: e.target.value } })}
+            style={{ width: 28, height: 22, padding: 0, border: "1px solid #3a3a3e", borderRadius: 3, cursor: "pointer" }}
+          />
+          <input
+            type="text"
+            value={scene.style?.secondaryColor ?? ""}
+            onChange={(e) => updateScene(scene.id, { style: { ...scene.style, secondaryColor: e.target.value } })}
+            placeholder="theme default"
+            style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
+          />
+        </Row>
+      </div>
+
+      <div className={styles.panelSection}>
+        <div style={{ display: "flex", gap: 6 }}>
           <button
             style={{ flex: 1, padding: "7px 0", fontSize: 12, fontWeight: 600, color: "#fff", background: "#0a84ff", border: "none", borderRadius: 6, cursor: "pointer" }}
             onClick={() => addScene()}
@@ -228,6 +289,18 @@ function ElementInspector({ sceneId, elementId }: { sceneId: string; elementId: 
         {/* Font properties for text */}
         {el.type === "text" && (
           <>
+            <Row label="Font">
+              <select
+                value={el.fontId ?? ""}
+                onChange={(e) => updateSceneElement(sceneId, el.id, { fontId: e.target.value || undefined })}
+                style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
+              >
+                <option value="">Theme default</option>
+                {vc.scenes.length > 0 && useLumvasStore.getState().theme.fonts.map((f) => (
+                  <option key={f.id} value={f.id}>{f.label}</option>
+                ))}
+              </select>
+            </Row>
             <Row label="Font Size">
               <input
                 type="number"
@@ -249,6 +322,12 @@ function ElementInspector({ sceneId, elementId }: { sceneId: string; elementId: 
             </Row>
             <Row label="Color">
               <input
+                type="color"
+                value={el.color || "#ffffff"}
+                onChange={(e) => updateSceneElement(sceneId, el.id, { color: e.target.value })}
+                style={{ width: 28, height: 22, padding: 0, border: "1px solid #3a3a3e", borderRadius: 3, cursor: "pointer" }}
+              />
+              <input
                 type="text"
                 value={el.color ?? ""}
                 onChange={(e) => updateSceneElement(sceneId, el.id, { color: e.target.value })}
@@ -256,20 +335,131 @@ function ElementInspector({ sceneId, elementId }: { sceneId: string; elementId: 
                 style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
               />
             </Row>
+            <Row label="Align">
+              <select
+                value={el.textAlign ?? "left"}
+                onChange={(e) => updateSceneElement(sceneId, el.id, { textAlign: e.target.value as any })}
+                style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
+              >
+                <option value="left">Left</option>
+                <option value="center">Center</option>
+                <option value="right">Right</option>
+              </select>
+            </Row>
+            <Row label="Opacity">
+              <input
+                type="range"
+                min={0} max={1} step={0.05}
+                value={el.opacity ?? 1}
+                onChange={(e) => updateSceneElement(sceneId, el.id, { opacity: Number(e.target.value) })}
+                style={{ flex: 1, height: 3 }}
+              />
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "#888", minWidth: 28 }}>
+                {Math.round((el.opacity ?? 1) * 100)}%
+              </span>
+            </Row>
           </>
         )}
 
         {/* Image asset ID */}
         {el.type === "image" && (
-          <Row label="Asset ID">
+          <>
+            <Row label="Asset ID">
+              <input
+                type="text"
+                value={el.content ?? ""}
+                onChange={(e) => updateSceneElement(sceneId, el.id, { content: e.target.value })}
+                style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
+              />
+            </Row>
+            <Row label="Fit">
+              <select
+                value={el.objectFit ?? "cover"}
+                onChange={(e) => updateSceneElement(sceneId, el.id, { objectFit: e.target.value as "cover" | "contain" | "fill" })}
+                style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
+              >
+                <option value="cover">Cover</option>
+                <option value="contain">Contain</option>
+                <option value="fill">Fill</option>
+              </select>
+            </Row>
+            <Row label="Scale">
+              <input
+                type="number"
+                min={0.01} step={0.05}
+                value={el.scale ?? 1}
+                onChange={(e) => updateSceneElement(sceneId, el.id, { scale: Number(e.target.value) })}
+                style={{ width: 70, fontSize: 11, padding: "3px 6px" }}
+              />
+              <span style={{ color: "#555", fontSize: 10 }}>×</span>
+            </Row>
+            <Row label="Opacity">
+              <input
+                type="range"
+                min={0} max={1} step={0.05}
+                value={el.opacity ?? 1}
+                onChange={(e) => updateSceneElement(sceneId, el.id, { opacity: Number(e.target.value) })}
+                style={{ flex: 1, height: 3 }}
+              />
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "#888", minWidth: 28 }}>
+                {Math.round((el.opacity ?? 1) * 100)}%
+              </span>
+            </Row>
+          </>
+        )}
+      </div>
+
+      {/* Position */}
+      <div className={styles.panelSection}>
+        <SectionTitle>Position</SectionTitle>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+          <Row label="X">
             <input
-              type="text"
-              value={el.content ?? ""}
-              onChange={(e) => updateSceneElement(sceneId, el.id, { content: e.target.value })}
-              style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
+              type="number"
+              value={el.x ?? 0}
+              onChange={(e) => updateSceneElement(sceneId, el.id, { x: Number(e.target.value) })}
+              style={{ width: "100%", fontSize: 11, padding: "3px 6px" }}
+              title="X position (% of scene width)"
             />
           </Row>
-        )}
+          <Row label="Y">
+            <input
+              type="number"
+              value={el.y ?? 0}
+              onChange={(e) => updateSceneElement(sceneId, el.id, { y: Number(e.target.value) })}
+              style={{ width: "100%", fontSize: 11, padding: "3px 6px" }}
+              title="Y position (% of scene height)"
+            />
+          </Row>
+        </div>
+        <Row label="Width">
+          <input
+            type="text"
+            value={el.sceneWidth ?? "auto"}
+            onChange={(e) => updateSceneElement(sceneId, el.id, { sceneWidth: e.target.value })}
+            placeholder="auto"
+            style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
+            title='e.g. "50%", "200px", "auto"'
+          />
+        </Row>
+        <Row label="Height">
+          <input
+            type="text"
+            value={el.sceneHeight ?? "auto"}
+            onChange={(e) => updateSceneElement(sceneId, el.id, { sceneHeight: e.target.value })}
+            placeholder="auto"
+            style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
+          />
+        </Row>
+        <Row label="Rotation">
+          <input
+            type="number"
+            value={el.rotation ?? 0}
+            onChange={(e) => updateSceneElement(sceneId, el.id, { rotation: Number(e.target.value) })}
+            style={{ width: 60, fontSize: 11, padding: "3px 6px" }}
+          />
+          <span style={{ color: "#555", fontSize: 10 }}>deg</span>
+        </Row>
       </div>
 
       {/* Timing */}
@@ -615,6 +805,37 @@ function SegmentEditor({ trackId, segments }: { trackId: string; segments: Capti
     setSelectedWord(null);
   };
 
+  // Update word timing
+  const updateWordTiming = (segIdx: number, wordIdx: number, field: "startMs" | "endMs", value: number) => {
+    update(segments.map((seg, si) =>
+      si !== segIdx ? seg : {
+        ...seg,
+        words: seg.words.map((w, wi) => wi === wordIdx ? { ...w, [field]: Math.max(0, value) } : w),
+      },
+    ));
+  };
+
+  // Nudge word timing by delta ms
+  const nudgeWordTiming = (segIdx: number, wordIdx: number, field: "startMs" | "endMs", deltaMs: number) => {
+    const word = segments[segIdx]?.words[wordIdx];
+    if (!word) return;
+    updateWordTiming(segIdx, wordIdx, field, word[field] + deltaMs);
+  };
+
+  // Shift entire word (both start and end) by delta ms
+  const shiftWord = (segIdx: number, wordIdx: number, deltaMs: number) => {
+    const word = segments[segIdx]?.words[wordIdx];
+    if (!word) return;
+    const newStart = Math.max(0, word.startMs + deltaMs);
+    const newEnd = Math.max(0, word.endMs + deltaMs);
+    update(segments.map((seg, si) =>
+      si !== segIdx ? seg : {
+        ...seg,
+        words: seg.words.map((w, wi) => wi === wordIdx ? { ...w, startMs: newStart, endMs: newEnd } : w),
+      },
+    ));
+  };
+
   const isSelected = (si: number, wi: number) => selectedWord?.segIdx === si && selectedWord?.wordIdx === wi;
   const isEditing = (si: number, wi: number) => editingWord?.segIdx === si && editingWord?.wordIdx === wi;
 
@@ -681,6 +902,66 @@ function SegmentEditor({ trackId, segments }: { trackId: string; segments: Capti
             <button style={{ ...actionBtnStyle, color: "#555" }} onClick={() => setSelectedWord(null)}>
               done
             </button>
+          </div>
+        );
+      })()}
+
+      {/* Word timing controls */}
+      {selectedWord && !editingWord && (() => {
+        const { segIdx, wordIdx } = selectedWord;
+        const word = segments[segIdx]?.words[wordIdx];
+        if (!word) return null;
+        const fmtMs = (ms: number) => {
+          const s = Math.floor(ms / 1000);
+          const m = ms % 1000;
+          return `${s}.${String(m).padStart(3, "0")}`;
+        };
+        return (
+          <div style={{
+            display: "flex", gap: 6, padding: "4px 0 8px", marginBottom: 4,
+            borderBottom: "1px solid #2a2a2e", alignItems: "center", flexWrap: "wrap",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+              <span style={{ fontSize: 9, color: "#666", minWidth: 24 }}>IN</span>
+              <button style={nudgeBtnStyle} onClick={() => nudgeWordTiming(segIdx, wordIdx, "startMs", -50)} title="-50ms">−</button>
+              <input
+                type="number"
+                value={word.startMs}
+                onChange={(e) => updateWordTiming(segIdx, wordIdx, "startMs", Number(e.target.value))}
+                style={timingInputStyle}
+                step={10}
+              />
+              <button style={nudgeBtnStyle} onClick={() => nudgeWordTiming(segIdx, wordIdx, "startMs", 50)} title="+50ms">+</button>
+              <button
+                style={setCurTimeBtnStyle}
+                onClick={() => updateWordTiming(segIdx, wordIdx, "startMs", useTimelineStore.getState().currentTimeMs)}
+                title="Set IN to current playhead time"
+              >▸|</button>
+              <span style={{ fontSize: 8, color: "#555", fontFamily: "var(--font-mono)" }}>{fmtMs(word.startMs)}s</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+              <span style={{ fontSize: 9, color: "#666", minWidth: 24 }}>OUT</span>
+              <button style={nudgeBtnStyle} onClick={() => nudgeWordTiming(segIdx, wordIdx, "endMs", -50)} title="-50ms">−</button>
+              <input
+                type="number"
+                value={word.endMs}
+                onChange={(e) => updateWordTiming(segIdx, wordIdx, "endMs", Number(e.target.value))}
+                style={timingInputStyle}
+                step={10}
+              />
+              <button style={nudgeBtnStyle} onClick={() => nudgeWordTiming(segIdx, wordIdx, "endMs", 50)} title="+50ms">+</button>
+              <button
+                style={setCurTimeBtnStyle}
+                onClick={() => updateWordTiming(segIdx, wordIdx, "endMs", useTimelineStore.getState().currentTimeMs)}
+                title="Set OUT to current playhead time"
+              >▸|</button>
+              <span style={{ fontSize: 8, color: "#555", fontFamily: "var(--font-mono)" }}>{fmtMs(word.endMs)}s</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 2, marginLeft: "auto" }}>
+              <span style={{ fontSize: 9, color: "#666" }}>shift</span>
+              <button style={nudgeBtnStyle} onClick={() => shiftWord(segIdx, wordIdx, -50)} title="Shift both -50ms">⟨</button>
+              <button style={nudgeBtnStyle} onClick={() => shiftWord(segIdx, wordIdx, 50)} title="Shift both +50ms">⟩</button>
+            </div>
           </div>
         );
       })()}
@@ -752,6 +1033,24 @@ const actionBtnStyle: React.CSSProperties = {
   borderRadius: 3, cursor: "pointer", whiteSpace: "nowrap",
 };
 
+const timingInputStyle: React.CSSProperties = {
+  width: 58, fontSize: 10, padding: "2px 4px",
+  background: "#1a1a1e", color: "#ccc", border: "1px solid #3a3a3e",
+  borderRadius: 3, fontFamily: "var(--font-mono)", textAlign: "right",
+};
+
+const nudgeBtnStyle: React.CSSProperties = {
+  fontSize: 10, padding: "1px 4px", color: "#888",
+  background: "#2a2a2e", border: "1px solid #3a3a3e",
+  borderRadius: 2, cursor: "pointer", lineHeight: 1,
+};
+
+const setCurTimeBtnStyle: React.CSSProperties = {
+  fontSize: 9, padding: "1px 5px", color: "#ff3b30",
+  background: "rgba(255,59,48,0.1)", border: "1px solid rgba(255,59,48,0.25)",
+  borderRadius: 2, cursor: "pointer", lineHeight: 1, fontWeight: 700,
+};
+
 const WHISPER_MODELS = [
   { value: "tiny", label: "Tiny (fast, less accurate)" },
   { value: "base", label: "Base (balanced)" },
@@ -769,6 +1068,7 @@ function CaptionInspector({ trackId }: { trackId: string }) {
   const [stripPunctuation, setStripPunctuation] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [maxWordsPerLine, setMaxWordsPerLine] = useState(6);
+  const [maxGapMs, setMaxGapMs] = useState(500);
   if (!track) return <EmptyInspector message="Caption track not found" />;
 
   const handleTranscribe = async () => {
@@ -856,6 +1156,18 @@ function CaptionInspector({ trackId }: { trackId: string }) {
 
       <div className={styles.panelSection}>
         <SectionTitle>Appearance</SectionTitle>
+        <Row label="Font">
+          <select
+            value={track.appearance.fontId ?? ""}
+            onChange={(e) => updateCaptionTrack(track.id, { appearance: { ...track.appearance, fontId: e.target.value || undefined } })}
+            style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
+          >
+            <option value="">Theme default</option>
+            {useLumvasStore.getState().theme.fonts.map((f) => (
+              <option key={f.id} value={f.id}>{f.label}</option>
+            ))}
+          </select>
+        </Row>
         <Row label="Font Size">
           <input
             type="number"
@@ -904,6 +1216,27 @@ function CaptionInspector({ trackId }: { trackId: string }) {
           />
           <span style={{ color: "#555", fontSize: 10 }}>%</span>
         </Row>
+        <Row label="Fill Mode">
+          <select
+            value={track.appearance.fillMode ?? "box"}
+            onChange={(e) => updateCaptionTrack(track.id, { appearance: { ...track.appearance, fillMode: e.target.value as "box" | "line" } })}
+            style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
+          >
+            <option value="box">Box (single rectangle)</option>
+            <option value="line">Line (per-line rectangles)</option>
+          </select>
+        </Row>
+        <Row label="Radius">
+          <input
+            type="number"
+            value={track.appearance.borderRadius ?? 8}
+            min={0}
+            onChange={(e) => updateCaptionTrack(track.id, { appearance: { ...track.appearance, borderRadius: Number(e.target.value) } })}
+            style={{ width: 50, fontSize: 11, padding: "3px 6px" }}
+            title="Border radius (px)"
+          />
+          <span style={{ color: "#555", fontSize: 10 }}>px</span>
+        </Row>
         <Row label="Highlight">
           <input
             type="color"
@@ -916,14 +1249,39 @@ function CaptionInspector({ trackId }: { trackId: string }) {
         <Row label="Position">
           <select
             value={track.appearance.position}
-            onChange={(e) => updateCaptionTrack(track.id, { appearance: { ...track.appearance, position: e.target.value as "bottom" | "top" | "center" } })}
+            onChange={(e) => updateCaptionTrack(track.id, { appearance: { ...track.appearance, position: e.target.value as any } })}
             style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
           >
             <option value="bottom">Bottom</option>
             <option value="top">Top</option>
             <option value="center">Center</option>
+            <option value="custom">Custom</option>
           </select>
         </Row>
+        {track.appearance.position === "custom" && (
+          <>
+            <Row label="X">
+              <input
+                type="number"
+                value={track.appearance.positionX ?? 50}
+                min={0} max={100}
+                onChange={(e) => updateCaptionTrack(track.id, { appearance: { ...track.appearance, positionX: Number(e.target.value) } })}
+                style={{ width: 55, fontSize: 11, padding: "3px 6px" }}
+              />
+              <span style={{ color: "#555", fontSize: 10 }}>%</span>
+            </Row>
+            <Row label="Y">
+              <input
+                type="number"
+                value={track.appearance.positionY ?? 85}
+                min={0} max={100}
+                onChange={(e) => updateCaptionTrack(track.id, { appearance: { ...track.appearance, positionY: Number(e.target.value) } })}
+                style={{ width: 55, fontSize: 11, padding: "3px 6px" }}
+              />
+              <span style={{ color: "#555", fontSize: 10 }}>%</span>
+            </Row>
+          </>
+        )}
         <Row label="Padding">
           <input
             type="number"
@@ -974,7 +1332,7 @@ function CaptionInspector({ trackId }: { trackId: string }) {
           {track.segments.length} segments, {track.segments.reduce((n, s) => n + s.words.length, 0)} words
         </div>
 
-        {/* Regroup by max words */}
+        {/* Regroup by max words + gap */}
         <Row label="Max words">
           <input
             type="number"
@@ -984,18 +1342,36 @@ function CaptionInspector({ trackId }: { trackId: string }) {
             onChange={(e) => setMaxWordsPerLine(Math.max(1, Number(e.target.value)))}
             style={{ width: 50, fontSize: 11, padding: "3px 6px" }}
           />
+        </Row>
+        <Row label="Max gap (ms)">
+          <input
+            type="number"
+            min={50}
+            max={5000}
+            step={50}
+            value={maxGapMs}
+            onChange={(e) => setMaxGapMs(Math.max(50, Number(e.target.value)))}
+            style={{ width: 70, fontSize: 11, padding: "3px 6px" }}
+          />
           <button
             style={{ fontSize: 10, padding: "3px 8px", color: "#0a84ff", background: "rgba(10,132,255,0.1)", border: "1px solid rgba(10,132,255,0.3)", borderRadius: 4, cursor: "pointer" }}
             onClick={() => {
               const allWords = track.segments.flatMap((s) => s.words);
               if (allWords.length === 0) return;
               const newSegs: CaptionSegment[] = [];
-              for (let i = 0; i < allWords.length; i += maxWordsPerLine) {
-                newSegs.push({
-                  id: `seg-${newSegs.length + 1}`,
-                  words: allWords.slice(i, i + maxWordsPerLine),
-                });
+              let current: typeof allWords = [];
+              for (let i = 0; i < allWords.length; i++) {
+                const word = allWords[i];
+                const prev = current[current.length - 1];
+                const gapExceeded = prev && (word.startMs - prev.endMs) > maxGapMs;
+                const wordLimitReached = current.length >= maxWordsPerLine;
+                if (current.length > 0 && (gapExceeded || wordLimitReached)) {
+                  newSegs.push({ id: `seg-${newSegs.length + 1}`, words: current });
+                  current = [];
+                }
+                current.push(word);
               }
+              if (current.length > 0) newSegs.push({ id: `seg-${newSegs.length + 1}`, words: current });
               useLumvasStore.getState().setCaptionSegments(trackId, newSegs);
             }}
           >

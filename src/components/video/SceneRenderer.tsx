@@ -60,7 +60,7 @@ export const SceneRenderer = forwardRef<HTMLDivElement, SceneRendererProps>(
           flexDirection: scene.direction ?? "column",
           alignItems: scene.alignItems ?? "center",
           justifyContent: scene.justifyContent ?? "center",
-          padding: scene.padding ?? 80,
+          padding: scene.padding ?? 0,
           gap: scene.gap ?? 24,
           position: "relative",
           overflow: "hidden",
@@ -112,13 +112,23 @@ function AnimatedElement({
   resolveColor: (token: string | undefined) => string;
   onClick?: () => void;
 }) {
-  const { transform, opacity, filter, visible } = computeElementStyle(element, sceneTimeMs, sceneDurationMs);
+  const { transform: animTransform, opacity: animOpacity, filter, visible } = computeElementStyle(element, sceneTimeMs, sceneDurationMs);
 
   if (!visible) return null;
 
   const color = resolveColor(element.color) || theme.primaryColor;
   const fontSize = element.fontSize ?? theme.fontSize;
   const fontWeight = element.fontWeight ?? theme.fontWeight;
+
+  // Static transforms from element properties (applied on top of animation transforms)
+  const staticParts: string[] = [];
+  if (element.x || element.y) staticParts.push(`translate(${element.x ?? 0}px, ${element.y ?? 0}px)`);
+  if (element.scale != null && element.scale !== 1) staticParts.push(`scale(${element.scale})`);
+  else if (element.scaleX != null || element.scaleY != null) staticParts.push(`scale(${element.scaleX ?? 1}, ${element.scaleY ?? 1})`);
+  if (element.rotation) staticParts.push(`rotate(${element.rotation}deg)`);
+
+  const combinedTransform = [staticParts.join(" "), animTransform].filter(Boolean).join(" ") || undefined;
+  const opacity = (element.opacity ?? 1) * animOpacity;
 
   const activeOutline = isActive
     ? { boxShadow: "inset 0 0 0 3px #0071e3", borderRadius: 4 }
@@ -127,10 +137,13 @@ function AnimatedElement({
   return (
     <div
       style={{
-        transform: transform || undefined,
+        width: element.sceneWidth ?? undefined,
+        height: element.sceneHeight ?? undefined,
+        transform: combinedTransform,
         opacity,
         filter: filter || undefined,
         willChange: "transform, opacity, filter",
+        flexShrink: element.sceneWidth ? 0 : undefined,
         ...activeOutline,
         cursor: onClick ? "pointer" : undefined,
       }}
@@ -176,15 +189,18 @@ function renderElementContent(
 
     case "image": {
       const src = resolveMediaSrc(el.content, ctx.projectDir);
+      // When sceneWidth/sceneHeight controls the wrapper, fill it completely
+      const hasSceneSize = el.sceneWidth || el.sceneHeight;
       return src ? (
         <img
           src={src}
           alt=""
           style={{
-            width: el.width ?? "100%",
-            height: el.height ?? "auto",
+            width: el.width ?? (hasSceneSize ? "100%" : "100%"),
+            height: el.height ?? (hasSceneSize ? "100%" : "auto"),
             objectFit: el.objectFit ?? "cover",
             borderRadius: el.borderRadius ?? ctx.theme.borderRadius,
+            display: "block",
           }}
         />
       ) : (

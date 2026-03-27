@@ -12,7 +12,13 @@
     "fs:default",
     {
       "identifier": "fs:scope",
-      "allow": [{ "path": "$HOME/**" }, { "path": "/tmp/**" }, { "path": "**" }]
+      "allow": [
+        { "path": "$HOME/**" },
+        { "path": "/tmp/**" },
+        { "path": "$APPDATA/**" },
+        { "path": "$APPLOCALDATA/**" },
+        { "path": "**" }
+      ]
     },
     "fs:allow-read-text-file",
     "fs:allow-read-file",

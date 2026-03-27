@@ -98,6 +98,7 @@
   align-items: center;
   justify-content: center;
   min-height: 0;
+  overflow: auto;
 }
 
 .canvasWrapper {
@@ -506,6 +507,10 @@
   background: #0a84ff;
   color: #fff;
   border-color: rgba(255, 255, 255, 0.2);
+  outline: 2px solid #0a84ff;
+  outline-offset: -1px;
+  box-shadow: 0 0 0 1px rgba(10, 132, 255, 0.5), 0 0 8px rgba(10, 132, 255, 0.4);
+  z-index: 2;
 }
 
 /* Element timing bars within scenes */
@@ -528,7 +533,9 @@
 }
 
 .elementBarActive {
-  outline: 1px solid #fff;
+  outline: 2px solid #0a84ff;
+  outline-offset: -1px;
+  box-shadow: 0 0 0 1px rgba(10, 132, 255, 0.5), 0 0 8px rgba(10, 132, 255, 0.4);
   z-index: 2;
 }
 
@@ -583,23 +590,13 @@
   border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-/* Audio waveform placeholder */
-.audioWaveform {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  opacity: 0.3;
-  background: repeating-linear-gradient(
-    90deg,
-    transparent 0px,
-    transparent 2px,
-    currentColor 2px,
-    currentColor 3px
-  );
-  pointer-events: none;
+.audioBlockActive {
+  outline: 2px solid #0a84ff;
+  outline-offset: -1px;
+  box-shadow: 0 0 0 1px rgba(10, 132, 255, 0.5), 0 0 8px rgba(10, 132, 255, 0.4);
+  z-index: 2;
 }
+
 
 /* Playhead */
 .playhead {
@@ -644,22 +641,92 @@
   pointer-events: all;
 }
 
-/* Caption track blocks */
-.captionBlock {
+/* Caption segment group (visual background connector) */
+.captionSegmentGroup {
   position: absolute;
   top: 4px;
   bottom: 4px;
+  background: rgba(138, 43, 226, 0.12);
+  border-radius: 3px;
+  border: 1px solid rgba(138, 43, 226, 0.15);
+  pointer-events: none;
+}
+
+.captionSegmentGroupActive {
+  border-color: rgba(10, 132, 255, 0.3);
+  background: rgba(138, 43, 226, 0.18);
+}
+
+/* Caption word blocks */
+.captionWord {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
   display: flex;
   align-items: center;
-  padding: 0 6px;
+  justify-content: center;
+  padding: 0 3px;
   font-size: 9px;
-  color: rgba(255, 255, 255, 0.7);
-  background: rgba(138, 43, 226, 0.4);
-  border-radius: 3px;
-  border: 1px solid rgba(138, 43, 226, 0.3);
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(138, 43, 226, 0.5);
+  border-radius: 2px;
+  border: 1px solid rgba(138, 43, 226, 0.4);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+  cursor: grab;
+  z-index: 1;
+  min-width: 4px;
+  transition: background 0.1s;
+}
+
+.captionWord:hover {
+  background: rgba(138, 43, 226, 0.65);
+  z-index: 3;
+}
+
+.captionWord:active {
+  cursor: grabbing;
+}
+
+.captionWordActive {
+  outline: 2px solid #0a84ff;
+  outline-offset: -1px;
+  box-shadow: 0 0 0 1px rgba(10, 132, 255, 0.5), 0 0 6px rgba(10, 132, 255, 0.4);
+  z-index: 4;
+  background: rgba(138, 43, 226, 0.7);
+}
+
+/* Caption word drag handles */
+.captionWordHandleLeft,
+.captionWordHandleRight {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  cursor: col-resize;
+  z-index: 5;
+}
+
+.captionWordHandleLeft {
+  left: -1px;
+  border-radius: 2px 0 0 2px;
+}
+
+.captionWordHandleRight {
+  right: -1px;
+  border-radius: 0 2px 2px 0;
+}
+
+.captionWordHandleLeft:hover,
+.captionWordHandleRight:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.captionWordHandleLeft:active,
+.captionWordHandleRight:active {
+  background: rgba(10, 132, 255, 0.5);
 }
 
 /* Scrubber overlay for ruler click-to-seek */
@@ -743,4 +810,55 @@
 /* Force dark dropdowns in webkit/blink */
 .layout select {
   color-scheme: dark;
+}
+
+/* ===== EXPORT OVERLAY ===== */
+.exportOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+}
+
+.exportDialog {
+  background: #2a2a2e;
+  border: 1px solid #3a3a3e;
+  border-radius: 12px;
+  padding: 32px 40px;
+  min-width: 320px;
+  text-align: center;
+  color: #e0e0e0;
+}
+
+.exportDialog,
+.exportDialog * {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.exportDialog h3 {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.exportProgressBar {
+  width: 100%;
+  height: 6px;
+  background: #3a3a3e;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 12px;
+}
+
+.exportProgressFill {
+  height: 100%;
+  background: #0a84ff;
+  border-radius: 3px;
+  transition: width 0.15s;
 }

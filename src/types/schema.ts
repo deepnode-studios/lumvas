@@ -281,10 +281,23 @@ export interface ElementTiming {
   keyframes?: Keyframe[];
 }
 
-/** A scene element: SlideElement + timing/animation metadata */
+/** A scene element: SlideElement + timing/animation metadata + absolute positioning */
 export interface SceneElement extends SlideElement {
   timing: ElementTiming;
   children?: SceneElement[];
+
+  // Absolute positioning within the scene (percentage 0–100 of scene dimensions)
+  x?: number;
+  y?: number;
+  // Explicit size override (percentage of scene dimensions, or "auto")
+  sceneWidth?: string;   // e.g. "50%", "auto", "200px"
+  sceneHeight?: string;
+  // Static transforms
+  scale?: number;
+  scaleX?: number;
+  scaleY?: number;
+  // Rotation in degrees
+  rotation?: number;
 }
 
 /* Scene transitions */
@@ -350,6 +363,8 @@ export interface CaptionSegment {
   speaker?: string; // from diarization
 }
 
+export type CaptionFillMode = "box" | "line";
+
 export interface CaptionAppearance {
   fontId?: string;
   fontSize?: number;
@@ -357,9 +372,13 @@ export interface CaptionAppearance {
   color?: string;
   backgroundColor?: string;
   backgroundOpacity?: number;
-  position: "bottom" | "top" | "center";
+  position: "bottom" | "top" | "center" | "custom";
+  positionX?: number;  // % of scene width (0–100), used when position === "custom"
+  positionY?: number;  // % of scene height (0–100)
   padding?: number;
   highlightColor?: string; // for karaoke mode
+  fillMode?: CaptionFillMode;   // "box" = single rectangle, "line" = per-line rectangles
+  borderRadius?: number;         // px, used for corners and concave joins in line mode
 }
 
 export interface CaptionTrack {

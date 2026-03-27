@@ -13,10 +13,14 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
+        .manage(ffmpeg::VideoEncoderState::new())
         .invoke_handler(tauri::generate_handler![
             ffmpeg::mix_audio,
             ffmpeg::encode_video,
             ffmpeg::get_audio_duration,
+            ffmpeg::start_video_pipe,
+            ffmpeg::write_raw_frame,
+            ffmpeg::finish_video_pipe,
             transcribe::transcribe_audio,
         ])
         .setup(|app| {

@@ -1,5 +1,8 @@
 use serde::Deserialize;
-use tauri::command;
+use std::io::Write;
+use std::process::{Child, ChildStdin, Stdio};
+use std::sync::Mutex;
+use tauri::{command, State};
 
 #[derive(Deserialize)]
 pub struct AudioTrackSpec {
@@ -16,6 +19,191 @@ struct CmdOutput {
     success: bool,
     stdout: Vec<u8>,
     stderr: Vec<u8>,
+}
+
+/* ─── Streaming video encoder (raw RGBA → FFmpeg stdin pipe) ─── */
+
+pub struct VideoEncoderState {
+    stdin: Mutex<Option<ChildStdin>>,
+    child: Mutex<Option<Child>>,
+    raw_path: Mutex<Option<String>>,
+}
+
+impl VideoEncoderState {
+    pub fn new() -> Self {
+        Self {
+            stdin: Mutex::new(None),
+            child: Mutex::new(None),
+            raw_path: Mutex::new(None),
+        }
+    }
+}
+
+/// Find a binary (ffmpeg / ffprobe) by checking common locations.
+fn find_ffmpeg_binary(name: &str) -> Result<String, String> {
+    // Try common absolute paths first
+    for prefix in &["/usr/bin/", "/usr/local/bin/", "/opt/homebrew/bin/"] {
+        let path = format!("{}{}", prefix, name);
+        if std::path::Path::new(&path).exists() {
+            return Ok(path);
+        }
+    }
+    // Try `which`
+    if let Ok(output) = std::process::Command::new("which")
+        .arg(name)
+        .env_clear()
+        .env("PATH", std::env::var("PATH").unwrap_or_default())
+        .output()
+    {
+        if output.status.success() {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path.is_empty() {
+                return Ok(path);
+            }
+        }
+    }
+    Err(format!("{} not found. Install it or provide a bundled binary.", name))
+}
+
+/// Start FFmpeg with raw RGBA video piped via stdin.
+#[command]
+pub fn start_video_pipe(
+    state: State<'_, VideoEncoderState>,
+    width: u32,
+    height: u32,
+    fps: u32,
+    codec: String,
+    quality: String,
+    audio_path: Option<String>,
+    output_path: String,
+) -> Result<(), String> {
+    let ffmpeg_bin = find_ffmpeg_binary("ffmpeg")?;
+
+    let crf = match quality.as_str() {
+        "draft" => "28",
+        "high" => "18",
+        _ => "23",
+    };
+
+    let size_str = format!("{}x{}", width, height);
+    let fps_str = fps.to_string();
+
+    let mut args: Vec<String> = vec![
+        "-y".into(),
+        "-f".into(), "rawvideo".into(),
+        "-pix_fmt".into(), "rgba".into(),
+        "-s".into(), size_str,
+        "-r".into(), fps_str,
+        "-i".into(), "pipe:0".into(),
+    ];
+
+    if let Some(ref audio) = audio_path {
+        args.extend(["-i".into(), audio.clone()]);
+    }
+
+    match codec.as_str() {
+        "vp9" => {
+            args.extend([
+                "-c:v".into(), "libvpx-vp9".into(),
+                "-crf".into(), crf.into(),
+                "-b:v".into(), "0".into(),
+                "-pix_fmt".into(), "yuv420p".into(),
+            ]);
+        }
+        _ => {
+            args.extend([
+                "-c:v".into(), "libx264".into(),
+                "-preset".into(), "ultrafast".into(),
+                "-crf".into(), crf.into(),
+                "-pix_fmt".into(), "yuv420p".into(),
+            ]);
+        }
+    }
+
+    if audio_path.is_some() {
+        args.extend(["-c:a".into(), "aac".into(), "-shortest".into()]);
+    }
+    args.push(output_path);
+
+    let mut child = std::process::Command::new(&ffmpeg_bin)
+        .args(&args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .env_clear()
+        .env("PATH", std::env::var("PATH").unwrap_or_default())
+        .env("HOME", std::env::var("HOME").unwrap_or_default())
+        .spawn()
+        .map_err(|e| format!("Failed to start ffmpeg ({}): {}", ffmpeg_bin, e))?;
+
+    let stdin = child.stdin.take().ok_or("Failed to open ffmpeg stdin")?;
+
+    *state.stdin.lock().unwrap() = Some(stdin);
+    *state.child.lock().unwrap() = Some(child);
+    Ok(())
+}
+
+/// Write a raw RGBA frame to FFmpeg's stdin using Tauri's raw binary IPC.
+/// Accepts the frame pixel data directly in the request body — no temp files.
+#[command]
+pub fn write_raw_frame(
+    request: tauri::ipc::Request<'_>,
+    state: State<'_, VideoEncoderState>,
+) -> Result<(), String> {
+    let data = match request.body() {
+        tauri::ipc::InvokeBody::Raw(bytes) => bytes.clone(),
+        tauri::ipc::InvokeBody::Json(val) => {
+            // Fallback: if sent as JSON (shouldn't happen with rawBody)
+            if let Some(path) = val.get("framePath").and_then(|v| v.as_str()) {
+                std::fs::read(path)
+                    .map_err(|e| format!("Failed to read frame file: {}", e))?
+            } else {
+                return Err("No frame data provided".into());
+            }
+        }
+    };
+
+    let mut guard = state.stdin.lock().unwrap();
+    let stdin = guard.as_mut().ok_or("No video pipe active")?;
+    stdin.write_all(&data).map_err(|e| format!("Failed to write to ffmpeg stdin: {}", e))?;
+    Ok(())
+}
+
+/// Close the pipe and wait for FFmpeg to finish encoding.
+#[command]
+pub async fn finish_video_pipe(
+    state: State<'_, VideoEncoderState>,
+) -> Result<String, String> {
+    // Close stdin to signal EOF
+    {
+        let mut guard = state.stdin.lock().unwrap();
+        drop(guard.take());
+    }
+
+    let child = {
+        let mut guard = state.child.lock().unwrap();
+        guard.take()
+    };
+
+    if let Some(child) = child {
+        let output = tauri::async_runtime::spawn_blocking(move || child.wait_with_output())
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?;
+
+        // Clean up raw frame file
+        if let Some(path) = state.raw_path.lock().unwrap().take() {
+            let _ = std::fs::remove_file(&path);
+        }
+
+        if output.status.success() {
+            Ok("done".into())
+        } else {
+            Err(String::from_utf8_lossy(&output.stderr).to_string())
+        }
+    } else {
+        Err("No video pipe active".into())
+    }
 }
 
 /// Run an ffmpeg/ffprobe command. Tries the bundled sidecar first, falls back to system binary.
@@ -40,18 +228,35 @@ async fn run_ffmpeg_binary(
         }
     }
 
-    // Fallback to system binary
-    let binary_owned = binary.to_string();
+    // Fallback to system binary — use env_clear() to avoid E2BIG
+    // when the inherited environment is too large.
     let binary_name = binary.to_string();
+    let binary_path = find_ffmpeg_binary(&binary_name)?;
+    let binary_path_display = binary_path.clone();
     let args = args.to_vec();
+    let args_debug = args.join(" ");
+    let args_len: usize = args.iter().map(|a| a.len()).sum();
+    let path_env = std::env::var("PATH").unwrap_or_default();
+    let home_env = std::env::var("HOME").unwrap_or_default();
+    let env_len = path_env.len() + home_env.len();
+    log::info!(
+        "run_ffmpeg_binary: bin={} args_count={} args_bytes={} env_bytes={} cmd: {} {}",
+        binary_path_display, args.len(), args_len, env_len, binary_path_display, args_debug
+    );
     let result = tauri::async_runtime::spawn_blocking(move || {
-        std::process::Command::new(&binary_owned)
+        std::process::Command::new(&binary_path)
             .args(&args)
+            .env_clear()
+            .env("PATH", &path_env)
+            .env("HOME", &home_env)
             .output()
     })
     .await
     .map_err(|e| e.to_string())?
-    .map_err(|e| format!("{} not found. Install it or provide a bundled binary: {}", binary_name, e))?;
+    .map_err(|e| format!(
+        "Failed to run {} (at {}): {} [args_count={}, args_bytes={}, env_bytes={}]",
+        binary_name, binary_path_display, e, args_debug.len(), args_len, env_len
+    ))?;
 
     Ok(CmdOutput {
         success: result.status.success(),

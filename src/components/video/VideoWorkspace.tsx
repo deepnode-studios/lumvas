@@ -1,6 +1,7 @@
-import { useEffect, useRef, useCallback, useMemo } from "react";
+import { useEffect, useRef, useCallback, useMemo, useState } from "react";
 import { useLumvasStore, selectVideoContent } from "@/store/useLumvasStore";
 import { useFileStore } from "@/store/useFileStore";
+import { useExportStore } from "@/store/useExportStore";
 import {
   useTimelineStore,
   getTotalDurationMs,
@@ -10,6 +11,8 @@ import {
 import { useMenuEvents } from "@/hooks/useMenuEvents";
 import { useGoogleFonts } from "@/hooks/useGoogleFonts";
 import { usePlayback } from "@/hooks/usePlayback";
+import { useAudioPeaks } from "@/hooks/useAudioPeaks";
+import { resolveMediaSrc } from "@/utils/media";
 import { basename } from "@/utils/path";
 import { SceneRenderer } from "./SceneRenderer";
 import { MediaPool } from "./MediaPool";
@@ -358,7 +361,7 @@ function ElementBarDraggable({
       style={{
         left,
         width: Math.max(width, 4),
-        background: `${color}88`,
+        background: isActive ? `${color}cc` : `${color}88`,
         borderLeft: `2px solid ${color}`,
         top: 6,
         height: 30,
@@ -384,6 +387,52 @@ function ElementBarDraggable({
   );
 }
 
+/* ---------- Audio Waveform ---------- */
+
+function AudioWaveformSvg({
+  audioUrl,
+  width,
+  color,
+}: {
+  audioUrl: string | null;
+  width: number;
+  color: string;
+}) {
+  const numBuckets = Math.max(4, Math.round(width / 2));
+  const peaks = useAudioPeaks(audioUrl, numBuckets);
+  if (!peaks || width < 4) return null;
+
+  const h = 28; // track height minus padding
+  const mid = h / 2;
+  const barW = Math.max(1, width / peaks.length);
+
+  const points = Array.from(peaks).map((amp, i) => {
+    const x = i * barW + barW / 2;
+    const half = Math.max(1, amp * mid * 0.9);
+    return { x, y1: mid - half, y2: mid + half };
+  });
+
+  return (
+    <svg
+      width={width}
+      height={h}
+      style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
+      preserveAspectRatio="none"
+    >
+      {points.map(({ x, y1, y2 }, i) => (
+        <line
+          key={i}
+          x1={x} y1={y1} x2={x} y2={y2}
+          stroke={color}
+          strokeWidth={Math.max(1, barW - 1)}
+          strokeLinecap="round"
+          opacity={0.55}
+        />
+      ))}
+    </svg>
+  );
+}
+
 /* ---------- Timeline Tracks ---------- */
 
 function uid(): string {
@@ -395,14 +444,17 @@ function TimelineTracks({
   currentTimeMs,
   totalDuration,
   onSeek,
+  projectDir,
 }: {
   zoomLevel: number;
   currentTimeMs: number;
   totalDuration: number;
   onSeek: (ms: number) => void;
+  projectDir: string | null;
 }) {
   const videoContent = useLumvasStore((s) => selectVideoContent(s));
   const addSceneElement = useLumvasStore((s) => s.addSceneElement);
+  const inspectorTarget = useTimelineStore((s) => s.inspectorTarget);
   const currentSceneId = getSceneAtTime(currentTimeMs);
   const totalWidth = (totalDuration / 1000) * zoomLevel;
   const tracksRef = useRef<HTMLDivElement>(null);
@@ -422,12 +474,11 @@ function TimelineTracks({
       if (!scene) return;
 
       if (mediaType === "image") {
-        const assetId = e.dataTransfer.getData("application/x-asset-id");
-        const label = e.dataTransfer.getData("application/x-asset-label");
+        const assetData = e.dataTransfer.getData("application/x-asset-data");
         const el = {
           id: uid(),
           type: "image" as const,
-          content: assetId,
+          content: assetData,
           timing: { enterMs: 0, enterAnimation: { preset: "fade-in" as const, durationMs: 500 } },
         };
         addSceneElement(targetSceneId, el);
@@ -456,37 +507,74 @@ function TimelineTracks({
 
   const playheadX = (currentTimeMs / 1000) * zoomLevel;
 
-  const hasElements = videoContent.scenes.some((s) => s.elements.length > 0);
+  // Build a flat list of layers — each item is its own independent track row
+  type Layer =
+    | { kind: "video" }
+    | { kind: "element"; el: (typeof videoContent.scenes)[0]["elements"][0]; sceneId: string; sceneDurationMs: number; sceneStartMs: number }
+    | { kind: "audio"; track: (typeof videoContent.audioTracks)[0] }
+    | { kind: "caption"; track: (typeof videoContent.captionTracks)[0] };
+
+  const layers: Layer[] = [];
+
+  // Video scenes — always first
+  layers.push({ kind: "video" });
+
+  // Each element gets its own layer
+  for (const scene of videoContent.scenes) {
+    const sceneStartMs = getSceneStartMs(scene.id);
+    for (const el of scene.elements) {
+      layers.push({ kind: "element", el, sceneId: scene.id, sceneDurationMs: scene.durationMs, sceneStartMs });
+    }
+  }
+
+  // Each audio track gets its own layer
+  for (const track of videoContent.audioTracks) {
+    layers.push({ kind: "audio", track });
+  }
+
+  // Each caption track gets its own layer
+  for (const track of videoContent.captionTracks) {
+    layers.push({ kind: "caption", track });
+  }
 
   return (
     <div className={styles.timelineContent}>
       {/* Track labels */}
       <div className={styles.trackLabels}>
-        <div className={styles.trackLabel}>
-          <span className={styles.trackLabelDot} style={{ background: "#0a84ff" }} />
-          Video
-        </div>
-        {hasElements && (
-          <div className={styles.trackLabel}>
-            <span className={styles.trackLabelDot} style={{ background: "#4ecdc4" }} />
-            Elements
-          </div>
-        )}
-        {videoContent.audioTracks.map((track) => (
-          <div key={track.id} className={styles.trackLabel}>
-            <span
-              className={styles.trackLabelDot}
-              style={{ background: AUDIO_COLORS[track.type] ?? "#888" }}
-            />
-            {track.label.length > 10 ? track.label.slice(0, 10) + "..." : track.label}
-          </div>
-        ))}
-        {videoContent.captionTracks.map((track) => (
-          <div key={track.id} className={styles.trackLabel}>
-            <span className={styles.trackLabelDot} style={{ background: "#8a2be2" }} />
-            {track.label}
-          </div>
-        ))}
+        {layers.map((layer) => {
+          switch (layer.kind) {
+            case "video":
+              return (
+                <div key="video" className={styles.trackLabel}>
+                  <span className={styles.trackLabelDot} style={{ background: "#0a84ff" }} />
+                  Video
+                </div>
+              );
+            case "element":
+              return (
+                <div key={layer.el.id} className={styles.trackLabel}>
+                  <span className={styles.trackLabelDot} style={{ background: "#4ecdc4" }} />
+                  {(layer.el.content || layer.el.type).slice(0, 12)}
+                </div>
+              );
+            case "audio": {
+              const color = AUDIO_COLORS[layer.track.type] ?? "#888";
+              return (
+                <div key={layer.track.id} className={styles.trackLabel}>
+                  <span className={styles.trackLabelDot} style={{ background: color }} />
+                  {layer.track.label.length > 10 ? layer.track.label.slice(0, 10) + "..." : layer.track.label}
+                </div>
+              );
+            }
+            case "caption":
+              return (
+                <div key={layer.track.id} className={styles.trackLabel}>
+                  <span className={styles.trackLabelDot} style={{ background: "#8a2be2" }} />
+                  {layer.track.label}
+                </div>
+              );
+          }
+        })}
       </div>
 
       {/* Tracks area */}
@@ -498,109 +586,205 @@ function TimelineTracks({
           onDrop={handleDrop}
           onDragOver={handleDragOver}
         >
-          {/* Video track: scene blocks */}
-          <div className={styles.trackRow}>
-            {videoContent.scenes.map((scene, idx) => (
-              <SceneBlockDraggable
-                key={scene.id}
-                sceneId={scene.id}
-                sceneIndex={idx}
-                durationMs={scene.durationMs}
-                startMs={getSceneStartMs(scene.id)}
-                isActive={scene.id === currentSceneId}
-                zoomLevel={zoomLevel}
-                onSeek={onSeek}
-              />
-            ))}
-          </div>
+          {layers.map((layer) => {
+            switch (layer.kind) {
+              case "video":
+                return (
+                  <div key="video" className={styles.trackRow}>
+                    {videoContent.scenes.map((scene, idx) => (
+                      <SceneBlockDraggable
+                        key={scene.id}
+                        sceneId={scene.id}
+                        sceneIndex={idx}
+                        durationMs={scene.durationMs}
+                        startMs={getSceneStartMs(scene.id)}
+                        isActive={inspectorTarget?.type === "scene" && inspectorTarget.sceneId === scene.id}
+                        zoomLevel={zoomLevel}
+                        onSeek={onSeek}
+                      />
+                    ))}
+                  </div>
+                );
 
-          {/* Elements track */}
-          {hasElements && (
-            <div className={styles.trackRow}>
-              {videoContent.scenes.map((scene) => {
-                const sceneStartMs = getSceneStartMs(scene.id);
-                return scene.elements.map((el) => (
-                  <ElementBarDraggable
-                    key={el.id}
-                    el={el}
-                    sceneId={scene.id}
-                    sceneDurationMs={scene.durationMs}
-                    sceneStartMs={sceneStartMs}
-                    zoomLevel={zoomLevel}
-                    isActive={el.id === useLumvasStore.getState().activeElementId}
-                    onSeek={onSeek}
-                  />
-                ));
-              })}
-            </div>
-          )}
+              case "element":
+                return (
+                  <div key={layer.el.id} className={styles.trackRow}>
+                    <ElementBarDraggable
+                      el={layer.el}
+                      sceneId={layer.sceneId}
+                      sceneDurationMs={layer.sceneDurationMs}
+                      sceneStartMs={layer.sceneStartMs}
+                      zoomLevel={zoomLevel}
+                      isActive={layer.el.id === useLumvasStore.getState().activeElementId}
+                      onSeek={onSeek}
+                    />
+                  </div>
+                );
 
-          {/* Audio tracks */}
-          {videoContent.audioTracks.map((track) => {
-            const left = ((track.startMs ?? 0) / 1000) * zoomLevel;
-            const rawWidth = ((track.durationMs ?? totalDuration) / 1000) * zoomLevel;
-            const width = Number.isFinite(rawWidth) ? rawWidth : 0;
-            const color = AUDIO_COLORS[track.type] ?? "#888";
-            return (
-              <div key={track.id} className={styles.trackRow}>
-                <div
-                  className={styles.audioBlock}
-                  style={{
-                    left,
-                    width: Math.max(width, 4),
-                    background: `${color}22`,
-                    borderLeft: `3px solid ${color}`,
-                  }}
-                  onMouseDown={(e) => {
-                    e.stopPropagation();
-                    useTimelineStore.getState().setInspectorTarget({ type: "audio", trackId: track.id });
-                  }}
-                >
-                  <div className={styles.audioWaveform} style={{ color }} />
-                  {track.label}
-                </div>
-              </div>
-            );
-          })}
-
-          {/* Caption tracks */}
-          {videoContent.captionTracks.map((track) =>
-            track.segments.length > 0 ? (
-              <div key={track.id} className={styles.trackRow}>
-                {track.segments.map((seg) => {
-                  if (seg.words.length === 0) return null;
-                  const segStart = seg.words[0].startMs;
-                  const segEnd = seg.words[seg.words.length - 1].endMs;
-                  const left = (segStart / 1000) * zoomLevel;
-                  const width = ((segEnd - segStart) / 1000) * zoomLevel;
-                  return (
+              case "audio": {
+                const track = layer.track;
+                const left = ((track.startMs ?? 0) / 1000) * zoomLevel;
+                const rawWidth = ((track.durationMs ?? totalDuration) / 1000) * zoomLevel;
+                const width = Number.isFinite(rawWidth) ? rawWidth : 0;
+                const color = AUDIO_COLORS[track.type] ?? "#888";
+                return (
+                  <div key={track.id} className={styles.trackRow}>
                     <div
-                      key={seg.id}
-                      className={styles.captionBlock}
-                      style={{ left, width: Math.max(width, 4) }}
+                      className={`${styles.audioBlock} ${inspectorTarget?.type === "audio" && inspectorTarget.trackId === track.id ? styles.audioBlockActive : ""}`}
+                      style={{
+                        left,
+                        width: Math.max(width, 4),
+                        background: inspectorTarget?.type === "audio" && inspectorTarget.trackId === track.id ? `${color}44` : `${color}22`,
+                        borderLeft: `3px solid ${color}`,
+                      }}
                       onMouseDown={(e) => {
                         e.stopPropagation();
-                        onSeek(segStart);
-                        useTimelineStore.getState().setInspectorTarget({ type: "caption", trackId: track.id });
+                        useTimelineStore.getState().setInspectorTarget({ type: "audio", trackId: track.id });
                       }}
                     >
-                      {seg.words.map((w) => w.text).join(" ").slice(0, 20)}
+                      <AudioWaveformSvg
+                        audioUrl={track.src ? resolveMediaSrc(track.src, projectDir) : null}
+                        width={Math.max(width, 4)}
+                        color={color}
+                      />
+                      <span style={{ position: "relative", zIndex: 1 }}>{track.label}</span>
                     </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div
-                key={track.id}
-                className={styles.trackRow}
-                onMouseDown={(e) => {
-                  e.stopPropagation();
-                  useTimelineStore.getState().setInspectorTarget({ type: "caption", trackId: track.id });
-                }}
-                style={{ cursor: "pointer" }}
-              />
-            ),
-          )}
+                  </div>
+                );
+              }
+
+              case "caption": {
+                const track = layer.track;
+                const isTrackActive = inspectorTarget?.type === "caption" && inspectorTarget.trackId === track.id;
+                return (
+                  <div key={track.id} className={styles.trackRow}>
+                    {track.segments.map((seg, segIdx) => {
+                      if (seg.words.length === 0) return null;
+                      const segStart = seg.words[0].startMs;
+                      const segEnd = seg.words[seg.words.length - 1].endMs;
+                      const groupLeft = (segStart / 1000) * zoomLevel;
+                      const groupWidth = ((segEnd - segStart) / 1000) * zoomLevel;
+                      return (
+                        <div key={seg.id}>
+                          {/* Segment background connector */}
+                          <div
+                            className={`${styles.captionSegmentGroup} ${isTrackActive ? styles.captionSegmentGroupActive : ""}`}
+                            style={{ left: groupLeft, width: Math.max(groupWidth, 4) }}
+                          />
+                          {/* Individual word blocks */}
+                          {seg.words.map((word, wordIdx) => {
+                            const wLeft = (word.startMs / 1000) * zoomLevel;
+                            const wWidth = ((word.endMs - word.startMs) / 1000) * zoomLevel;
+                            return (
+                              <div
+                                key={`${seg.id}-w${wordIdx}`}
+                                className={`${styles.captionWord} ${isTrackActive ? styles.captionWordActive : ""}`}
+                                style={{ left: wLeft, width: Math.max(wWidth, 4) }}
+                                onMouseDown={(e) => {
+                                  e.stopPropagation();
+                                  useTimelineStore.getState().setInspectorTarget({ type: "caption", trackId: track.id });
+                                  // Drag to shift this word
+                                  const startX = e.clientX;
+                                  const origStart = word.startMs;
+                                  const origEnd = word.endMs;
+                                  let moved = false;
+                                  const onMove = (ev: MouseEvent) => {
+                                    moved = true;
+                                    const dx = ev.clientX - startX;
+                                    const deltaMs = Math.round((dx / zoomLevel) * 1000);
+                                    const newStart = Math.max(0, origStart + deltaMs);
+                                    const newEnd = Math.max(0, origEnd + deltaMs);
+                                    const newSegs = track.segments.map((s, si) =>
+                                      si !== segIdx ? s : {
+                                        ...s,
+                                        words: s.words.map((w, wi) =>
+                                          wi !== wordIdx ? w : { ...w, startMs: newStart, endMs: newEnd },
+                                        ),
+                                      },
+                                    );
+                                    useLumvasStore.getState().setCaptionSegments(track.id, newSegs);
+                                  };
+                                  const onUp = () => {
+                                    window.removeEventListener("mousemove", onMove);
+                                    window.removeEventListener("mouseup", onUp);
+                                    if (!moved) onSeek(word.startMs);
+                                  };
+                                  window.addEventListener("mousemove", onMove);
+                                  window.addEventListener("mouseup", onUp);
+                                }}
+                              >
+                                {/* Left handle - trim word start */}
+                                <div
+                                  className={styles.captionWordHandleLeft}
+                                  onMouseDown={(e) => {
+                                    e.stopPropagation();
+                                    const startX = e.clientX;
+                                    const origStart = word.startMs;
+                                    const onMove = (ev: MouseEvent) => {
+                                      const dx = ev.clientX - startX;
+                                      const deltaMs = Math.round((dx / zoomLevel) * 1000);
+                                      const newStart = Math.max(0, origStart + deltaMs);
+                                      const newSegs = track.segments.map((s, si) =>
+                                        si !== segIdx ? s : {
+                                          ...s,
+                                          words: s.words.map((w, wi) =>
+                                            wi !== wordIdx ? w : { ...w, startMs: Math.min(newStart, w.endMs - 10) },
+                                          ),
+                                        },
+                                      );
+                                      useLumvasStore.getState().setCaptionSegments(track.id, newSegs);
+                                    };
+                                    const onUp = () => {
+                                      window.removeEventListener("mousemove", onMove);
+                                      window.removeEventListener("mouseup", onUp);
+                                    };
+                                    window.addEventListener("mousemove", onMove);
+                                    window.addEventListener("mouseup", onUp);
+                                  }}
+                                />
+                                <span style={{ pointerEvents: "none", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                  {word.text}
+                                </span>
+                                {/* Right handle - trim word end */}
+                                <div
+                                  className={styles.captionWordHandleRight}
+                                  onMouseDown={(e) => {
+                                    e.stopPropagation();
+                                    const startX = e.clientX;
+                                    const origEnd = word.endMs;
+                                    const onMove = (ev: MouseEvent) => {
+                                      const dx = ev.clientX - startX;
+                                      const deltaMs = Math.round((dx / zoomLevel) * 1000);
+                                      const newEnd = Math.max(0, origEnd + deltaMs);
+                                      const newSegs = track.segments.map((s, si) =>
+                                        si !== segIdx ? s : {
+                                          ...s,
+                                          words: s.words.map((w, wi) =>
+                                            wi !== wordIdx ? w : { ...w, endMs: Math.max(w.startMs + 10, newEnd) },
+                                          ),
+                                        },
+                                      );
+                                      useLumvasStore.getState().setCaptionSegments(track.id, newSegs);
+                                    };
+                                    const onUp = () => {
+                                      window.removeEventListener("mousemove", onMove);
+                                      window.removeEventListener("mouseup", onUp);
+                                    };
+                                    window.addEventListener("mousemove", onMove);
+                                    window.addEventListener("mouseup", onUp);
+                                  }}
+                                />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              }
+            }
+          })}
 
           {/* Playhead line */}
           <div className={styles.playhead} style={{ left: playheadX }}>
@@ -617,7 +801,7 @@ function TimelineTracks({
 export function VideoWorkspace() {
   useGoogleFonts();
   useMenuEvents();
-  const engineRef = usePlayback();
+  usePlayback();
 
   const theme = useLumvasStore((s) => s.theme);
   const assets = useLumvasStore((s) => s.assets.items);
@@ -716,9 +900,47 @@ export function VideoWorkspace() {
     return () => window.removeEventListener("keydown", handler);
   }, [isPlaying, currentTimeMs, totalDuration, seekTo]);
 
-  // Compute preview scale to fit
+  // Preview scale: auto-fit or manual
   const centerRef = useRef<HTMLDivElement>(null);
-  const previewScale = 0.4;
+  const [previewScaleMode, setPreviewScaleMode] = useState<"fit" | "manual">("fit");
+  const [manualScale, setManualScale] = useState(0.4);
+  const [fitScale, setFitScale] = useState(0.4);
+
+  // Compute fit scale based on available space
+  useEffect(() => {
+    const el = centerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width: cw, height: ch } = entry.contentRect;
+        // Reserve space for transport bar (~60px) and padding
+        const availW = cw - 32;
+        const availH = ch - 92;
+        if (availW <= 0 || availH <= 0) return;
+        const s = Math.min(availW / size.width, availH / size.height, 1);
+        setFitScale(Math.max(0.05, s));
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [size.width, size.height]);
+
+  const previewScale = previewScaleMode === "fit" ? fitScale : manualScale;
+
+  // Ctrl+scroll to zoom preview
+  useEffect(() => {
+    const el = centerRef.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -0.05 : 0.05;
+      setPreviewScaleMode("manual");
+      setManualScale((p) => Math.max(0.05, Math.min(2, p + delta)));
+    };
+    el.addEventListener("wheel", handler, { passive: false });
+    return () => el.removeEventListener("wheel", handler);
+  }, []);
 
   const handlePlayPause = useCallback(() => {
     if (isPlaying) useTimelineStore.getState().pause();
@@ -873,6 +1095,31 @@ export function VideoWorkspace() {
           >
             {playbackSpeed}x
           </button>
+
+          <div style={{ width: 16 }} />
+
+          <button
+            className={styles.transportBtn}
+            onClick={() => { setPreviewScaleMode("manual"); setManualScale((p) => Math.max(0.05, p - 0.1)); }}
+            title="Zoom out"
+          >
+            −
+          </button>
+          <button
+            className={styles.speedSelector}
+            onClick={() => setPreviewScaleMode("fit")}
+            title="Fit to view"
+            style={previewScaleMode === "fit" ? { color: "#0a84ff", borderColor: "#0a84ff" } : undefined}
+          >
+            {Math.round(previewScale * 100)}%
+          </button>
+          <button
+            className={styles.transportBtn}
+            onClick={() => { setPreviewScaleMode("manual"); setManualScale((p) => Math.min(2, p + 0.1)); }}
+            title="Zoom in"
+          >
+            +
+          </button>
         </div>
       </main>
 
@@ -920,8 +1167,175 @@ export function VideoWorkspace() {
           currentTimeMs={currentTimeMs}
           totalDuration={totalDuration}
           onSeek={seekTo}
+          projectDir={projectDir}
         />
       </div>
+
+      {/* Export progress overlay */}
+      <ExportLayer size={size} />
     </div>
+  );
+}
+
+/* ---------- EXPORT LAYER ---------- */
+
+function ExportLayer({
+  size,
+}: {
+  size: import("@/types/schema").DocumentSize;
+}) {
+  const currentPhase = useExportStore((s) => s.currentPhase);
+  const isExporting = useExportStore((s) => s.isExporting);
+  const progress = useExportStore((s) => s.progress);
+  const renderedFrames = useExportStore((s) => s.renderedFrames);
+  const totalFrames = useExportStore((s) => s.totalFrames);
+  const errorMessage = useExportStore((s) => s.errorMessage);
+  const exportFps = useExportStore((s) => s.exportFps);
+  const exportScale = useExportStore((s) => s.exportScale);
+
+  const showOverlay = currentPhase === "settings" || isExporting || currentPhase === "done" || currentPhase === "error";
+
+  return (
+    <>
+      {/* Export overlay (settings / progress / done / error) */}
+      {showOverlay && (
+        <div className={styles.exportOverlay}>
+          <div className={styles.exportDialog}>
+            {currentPhase === "settings" ? (
+              <ExportSettings size={size} fps={exportFps} scale={exportScale} />
+            ) : currentPhase === "error" ? (
+              <>
+                <h3>Export failed</h3>
+                <p style={{ color: "#ff453a", fontSize: 13 }}>{errorMessage}</p>
+                <button className={styles.transportBtn} onClick={() => useExportStore.getState().reset()}>
+                  Close
+                </button>
+              </>
+            ) : currentPhase === "done" ? (
+              <>
+                <h3>Export complete</h3>
+                <button className={styles.transportBtn} onClick={() => useExportStore.getState().reset()}>
+                  Close
+                </button>
+              </>
+            ) : (
+              <>
+                <h3>
+                  {currentPhase === "rendering-frames" && "Rendering frames..."}
+                  {currentPhase === "mixing-audio" && "Mixing audio..."}
+                  {currentPhase === "encoding" && "Encoding video..."}
+                </h3>
+                {currentPhase === "rendering-frames" && (
+                  <p style={{ fontSize: 12, color: "#888" }}>
+                    Frame {renderedFrames} / {totalFrames}
+                  </p>
+                )}
+                <div className={styles.exportProgressBar}>
+                  <div className={styles.exportProgressFill} style={{ width: `${progress}%` }} />
+                </div>
+                <button
+                  className={styles.transportBtn}
+                  style={{ marginTop: 12 }}
+                  onClick={() => useExportStore.getState().cancelExport()}
+                >
+                  Cancel
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/* ---------- EXPORT SETTINGS ---------- */
+
+function ExportSettings({
+  size,
+  fps,
+  scale,
+}: {
+  size: import("@/types/schema").DocumentSize;
+  fps: number;
+  scale: number;
+}) {
+  const outW = Math.round(size.width * scale);
+  const outH = Math.round(size.height * scale);
+
+  return (
+    <>
+      <h3>Export Video</h3>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, margin: "16px 0", textAlign: "left" }}>
+        {/* Frame rate */}
+        <label style={{ fontSize: 13, color: "#aaa" }}>
+          Frame rate
+          <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+            {[12, 24, 30, 60].map((f) => (
+              <button
+                key={f}
+                className={styles.transportBtn}
+                style={{
+                  padding: "4px 12px",
+                  fontSize: 13,
+                  background: fps === f ? "#0a84ff" : undefined,
+                  color: fps === f ? "#fff" : undefined,
+                }}
+                onClick={() => useExportStore.getState().setExportFps(f)}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+        </label>
+
+        {/* Resolution scale */}
+        <label style={{ fontSize: 13, color: "#aaa" }}>
+          Resolution
+          <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+            {[
+              { label: "50%", value: 0.5 },
+              { label: "75%", value: 0.75 },
+              { label: "100%", value: 1 },
+              { label: "150%", value: 1.5 },
+              { label: "200%", value: 2 },
+            ].map((opt) => (
+              <button
+                key={opt.value}
+                className={styles.transportBtn}
+                style={{
+                  padding: "4px 12px",
+                  fontSize: 13,
+                  background: scale === opt.value ? "#0a84ff" : undefined,
+                  color: scale === opt.value ? "#fff" : undefined,
+                }}
+                onClick={() => useExportStore.getState().setExportScale(opt.value)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <span style={{ fontSize: 11, color: "#666", marginTop: 4, display: "block" }}>
+            {outW} × {outH} px
+          </span>
+        </label>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <button className={styles.transportBtn} onClick={() => useExportStore.getState().reset()}>
+          Cancel
+        </button>
+        <button
+          className={styles.transportBtn}
+          style={{ background: "#0a84ff", color: "#fff", padding: "6px 20px" }}
+          onClick={() => {
+            import("@/utils/exportVideo").then((m) => m.confirmExport());
+          }}
+        >
+          Export
+        </button>
+      </div>
+    </>
   );
 }
