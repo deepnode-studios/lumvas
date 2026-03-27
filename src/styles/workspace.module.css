@@ -120,20 +120,39 @@
 
 .fieldRow input[type="text"],
 .fieldRow input[type="number"],
-.fieldRow select {
+.fieldRow select,
+.fieldRow textarea {
   flex: 1;
   min-width: 0;
   padding: 6px 8px;
   font-size: 13px;
+  color: var(--text-primary);
   border: 1px solid var(--input-border);
   border-radius: 6px;
   background: var(--input-bg);
   outline: none;
 }
 
+.fieldRow select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 28px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  cursor: pointer;
+}
+
+.fieldRow textarea {
+  resize: vertical;
+  min-height: 56px;
+  font-family: inherit;
+}
+
 .fieldRow input[type="text"]:focus,
 .fieldRow input[type="number"]:focus,
-.fieldRow select:focus {
+.fieldRow select:focus,
+.fieldRow textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.25);
 }
@@ -153,6 +172,23 @@
   font-size: 12px;
   font-family: var(--font-mono);
   color: var(--text-secondary);
+}
+
+/* standalone input (outside .fieldRow) */
+.input {
+  padding: 6px 8px;
+  font-size: 13px;
+  color: var(--text-primary);
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  background: var(--input-bg);
+  outline: none;
+  min-width: 0;
+}
+
+.input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.25);
 }
 
 /* buttons */

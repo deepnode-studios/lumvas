@@ -216,6 +216,7 @@ function ElementRenderer({
             textTransform: el.textTransform ?? "none",
             width: el.width ?? (isRowChild ? undefined : "100%"),
             minWidth: isRowChild ? 0 : undefined,
+            whiteSpace: "pre-wrap",
             ...spacing,
             ...flexProps,
             ...activeOutline,

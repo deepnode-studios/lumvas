@@ -83,7 +83,17 @@ function ElementEditor({
   return (
     <div className={builderStyles.elementEditor}>
       {/* Content */}
-      {(el.type === "text" || el.type === "button") && (
+      {el.type === "text" && (
+        <div className={styles.fieldRow} style={{ alignItems: "flex-start" }}>
+          <label style={{ paddingTop: 6 }}>Content</label>
+          <textarea
+            value={el.content}
+            onChange={(e) => update({ content: e.target.value })}
+          />
+        </div>
+      )}
+
+      {el.type === "button" && (
         <div className={styles.fieldRow}>
           <label>Content</label>
           <input
@@ -96,9 +106,8 @@ function ElementEditor({
 
       {el.type === "list" && (
         <div className={styles.fieldRow} style={{ alignItems: "flex-start" }}>
-          <label>Items</label>
+          <label style={{ paddingTop: 6 }}>Items</label>
           <textarea
-            className={builderStyles.textarea}
             value={el.content}
             placeholder="One item per line"
             onChange={(e) => update({ content: e.target.value })}
@@ -562,20 +571,22 @@ function ElementEditor({
               />
             </div>
             <div style={{ marginTop: 8 }}>
-              <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, display: "block" }}>Data Points</label>
+              <label style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.6px", color: "var(--text-secondary)", marginBottom: 6, display: "block" }}>Data Points</label>
               {chartData.map((d, i) => (
                 <div key={i} style={{ display: "flex", gap: 4, marginBottom: 4, alignItems: "center" }}>
                   <input
                     type="text"
+                    className={styles.input}
                     value={d.label}
-                    style={{ flex: 1, minWidth: 0 }}
+                    style={{ flex: 1 }}
                     placeholder="Label"
                     onChange={(e) => updateDataPoint(i, { label: e.target.value })}
                   />
                   <input
                     type="number"
+                    className={styles.input}
                     value={d.value}
-                    style={{ width: 60 }}
+                    style={{ width: 64 }}
                     onChange={(e) => updateDataPoint(i, { value: Number(e.target.value) })}
                   />
                   <ColorPicker
