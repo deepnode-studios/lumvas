@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { useJsonvasStore } from "@/store/useJsonvasStore";
+import { useLumvasStore } from "@/store/useLumvasStore";
 import { ColorPicker } from "./ColorPicker";
 import g from "./gradientEditor.module.css";
 
@@ -172,7 +172,7 @@ export function GradientEditor({ value, onChange }: GradientEditorProps) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
-  const theme = useJsonvasStore((s) => s.theme);
+  const theme = useLumvasStore((s) => s.theme);
 
   const resolveColor = useCallback(
     (val: string | undefined): string => {

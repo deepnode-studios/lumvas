@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { useJsonvasStore } from "@/store/useJsonvasStore";
+import { useLumvasStore } from "@/store/useLumvasStore";
 import cp from "./colorPicker.module.css";
 
 export interface ColorPickerProps {
@@ -33,7 +33,7 @@ export function ColorPicker({
   allowNone = false,
   noneLabel = "Inherit",
 }: ColorPickerProps) {
-  const theme = useJsonvasStore((s) => s.theme);
+  const theme = useLumvasStore((s) => s.theme);
   const palette = theme.palette;
   const paletteIds = palette.map((c) => c.id);
 

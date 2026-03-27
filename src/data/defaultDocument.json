@@ -9,7 +9,7 @@
     "items": [
       {
         "id": "logo-main",
-        "label": "Jsonvas Logo",
+        "label": "Lumvas Logo",
         "data": "",
         "tintable": true
       }
@@ -72,7 +72,7 @@
           {
             "id": "el_text01",
             "type": "text",
-            "content": "Meet Jsonvas.",
+            "content": "Meet Lumvas.",
             "fontId": "header",
             "fontSize": 72,
             "fontWeight": 800,

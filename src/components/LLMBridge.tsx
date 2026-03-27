@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useJsonvasStore } from "@/store/useJsonvasStore";
+import { useLumvasStore } from "@/store/useLumvasStore";
 import { useTemplateStore } from "@/store/useTemplateStore";
 import { BUILT_IN_TEMPLATES, describeTemplatesForLLM } from "@/store/templates";
-import type { JsonvasDocument } from "@/types/schema";
+import type { LumvasDocument } from "@/types/schema";
+import { validateLumvasDocument } from "@/utils/validateDocument";
 import { JsonEditor } from "./JsonEditor";
 import styles from "@/styles/workspace.module.css";
 import b from "./llmBridge.module.css";
@@ -19,14 +20,6 @@ const TABS: { key: EditorTab; label: string }[] = [
 ];
 
 /* ─── Helpers ─── */
-
-function validate(obj: unknown): obj is JsonvasDocument {
-  if (!obj || typeof obj !== "object") return false;
-  const d = obj as Record<string, unknown>;
-  if (!d.assets || !d.theme || !d.content) return false;
-  const c = d.content as Record<string, unknown>;
-  return Array.isArray(c.slides);
-}
 
 /** Detect base64 data URI */
 function isDataUri(s: string): boolean {
@@ -47,8 +40,8 @@ function dataUriMeta(s: string): string {
 }
 
 /** Replace all binary data in a document with metadata placeholders */
-function stripBinaryFromDoc(doc: JsonvasDocument): JsonvasDocument {
-  const stripped = JSON.parse(JSON.stringify(doc)) as JsonvasDocument;
+function stripBinaryFromDoc(doc: LumvasDocument): LumvasDocument {
+  const stripped = JSON.parse(JSON.stringify(doc)) as LumvasDocument;
 
   // Strip asset binary data
   for (const item of stripped.assets.items) {
@@ -58,7 +51,7 @@ function stripBinaryFromDoc(doc: JsonvasDocument): JsonvasDocument {
   }
 
   // Strip image element content (including inside groups)
-  function stripElements(elements: JsonvasDocument["content"]["slides"][0]["elements"]) {
+  function stripElements(elements: LumvasDocument["content"]["slides"][0]["elements"]) {
     for (const el of elements) {
       if (el.type === "image" && el.content && isDataUri(el.content)) {
         el.content = dataUriMeta(el.content);
@@ -76,7 +69,7 @@ function stripBinaryFromDoc(doc: JsonvasDocument): JsonvasDocument {
 }
 
 /** Get the JSON slice for a given tab */
-function getSlice(doc: JsonvasDocument, tab: EditorTab): string {
+function getSlice(doc: LumvasDocument, tab: EditorTab): string {
   switch (tab) {
     case "content":
       return JSON.stringify(doc.content, null, 2);
@@ -91,27 +84,27 @@ function getSlice(doc: JsonvasDocument, tab: EditorTab): string {
 
 /** Merge an edited slice back into the full document */
 function mergeSlice(
-  doc: JsonvasDocument,
+  doc: LumvasDocument,
   tab: EditorTab,
   parsed: unknown
-): JsonvasDocument | null {
+): LumvasDocument | null {
   switch (tab) {
     case "content": {
       const c = parsed as Record<string, unknown>;
       if (!c || !Array.isArray(c.slides)) return null;
-      return { ...doc, content: parsed as JsonvasDocument["content"] };
+      return { ...doc, content: parsed as LumvasDocument["content"] };
     }
     case "theme": {
       if (!parsed || typeof parsed !== "object") return null;
-      return { ...doc, theme: parsed as JsonvasDocument["theme"] };
+      return { ...doc, theme: parsed as LumvasDocument["theme"] };
     }
     case "assets": {
       if (!parsed || typeof parsed !== "object") return null;
-      return { ...doc, assets: parsed as JsonvasDocument["assets"] };
+      return { ...doc, assets: parsed as LumvasDocument["assets"] };
     }
     case "full": {
-      if (!validate(parsed as unknown)) return null;
-      return parsed as JsonvasDocument;
+      if (!validateLumvasDocument(parsed as unknown)) return null;
+      return parsed as LumvasDocument;
     }
   }
 }
@@ -119,11 +112,9 @@ function mergeSlice(
 /* ─── Component ─── */
 
 export function LLMBridge() {
-  const getDocument = useJsonvasStore((s) => s.getDocument);
-  const importDocument = useJsonvasStore((s) => s.importDocument);
+  const getDocument = useLumvasStore((s) => s.getDocument);
+  const importDocument = useLumvasStore((s) => s.importDocument);
   const [open, setOpen] = useState(false);
-  const [exportMenu, setExportMenu] = useState(false);
-  const exportMenuRef = useRef<HTMLDivElement>(null);
   const [tab, setTab] = useState<EditorTab>("content");
   const [jsonText, setJsonText] = useState("");
   const [parseError, setParseError] = useState("");
@@ -140,18 +131,6 @@ export function LLMBridge() {
       setParseError("");
     }
   }, [storeSlice]);
-
-  // Close export menu on outside click
-  useEffect(() => {
-    if (!exportMenu) return;
-    const handler = (e: MouseEvent) => {
-      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
-        setExportMenu(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [exportMenu]);
 
   // When switching tabs, immediately sync
   const switchTab = useCallback(
@@ -203,9 +182,9 @@ export function LLMBridge() {
     const doc = getDocument();
     const stripped = stripBinaryFromDoc(doc);
     const templateDesc = describeTemplatesForLLM(BUILT_IN_TEMPLATES, customTemplates);
-    return `# Jsonvas Document Schema
+    return `# Lumvas Document Schema
 
-Below is a Jsonvas carousel document. You can modify it and return the full JSON to update the design.
+Below is a Lumvas carousel document. You can modify it and return the full JSON to update the design.
 
 ## Schema Reference
 
@@ -379,189 +358,25 @@ ${JSON.stringify(stripped, null, 2)}
     setTimeout(() => setCopyLabel("Copy for LLM"), 1500);
   };
 
-  /** Inject cross-origin stylesheets as same-origin <style> so html-to-image can read cssRules */
-  const injectCrossOriginCSS = async () => {
-    const injected: HTMLStyleElement[] = [];
-    for (const sheet of Array.from(document.styleSheets)) {
-      try {
-        sheet.cssRules;
-      } catch {
-        if (sheet.href) {
-          try {
-            const css = await fetch(sheet.href).then((r) => r.text());
-            const style = document.createElement("style");
-            style.textContent = css;
-            style.setAttribute("data-export-injected", "true");
-            document.head.appendChild(style);
-            injected.push(style);
-            (sheet.ownerNode as HTMLLinkElement)?.setAttribute("data-export-disabled", "true");
-            (sheet.ownerNode as HTMLLinkElement).disabled = true;
-          } catch { /* skip */ }
-        }
-      }
-    }
-    return injected;
-  };
-
-  const cleanupInjectedCSS = (injected: HTMLStyleElement[]) => {
-    for (const s of injected) s.remove();
-    for (const link of document.querySelectorAll<HTMLLinkElement>("[data-export-disabled]")) {
-      link.disabled = false;
-      link.removeAttribute("data-export-disabled");
-    }
-  };
-
-  /** Capture all export slides as data URLs */
-  const captureSlides = async (toPng: (el: HTMLElement, opts: Record<string, unknown>) => Promise<string>) => {
-    const container = document.getElementById("export-slides");
-    if (!container) return [];
-    const doc = getDocument();
-    const w = doc.documentSize.width;
-    const h = doc.documentSize.height;
-    const results: string[] = [];
-    for (let i = 0; i < container.children.length; i++) {
-      const el = container.children[i] as HTMLElement;
-      const dataUrl = await toPng(el, { width: w, height: h, pixelRatio: 2 });
-      results.push(dataUrl);
-    }
-    return results;
-  };
-
-  const getSaveAs = async () => {
-    const fileSaver = await import("file-saver");
-    return (
-      fileSaver.saveAs ??
-      (fileSaver as unknown as { default: typeof fileSaver }).default?.saveAs ??
-      (fileSaver as unknown as { default: Function }).default
-    );
-  };
-
-  const handleExport = async () => {
-    const { toPng } = await import("html-to-image");
-    const { default: JSZip } = await import("jszip");
-    const saveAs = await getSaveAs();
-    const injected = await injectCrossOriginCSS();
-    try {
-      const dataUrls = await captureSlides(toPng);
-      const zip = new JSZip();
-      for (let i = 0; i < dataUrls.length; i++) {
-        const resp = await fetch(dataUrls[i]);
-        zip.file(`slide-${i + 1}.png`, await resp.blob());
-      }
-      const zipBlob = await zip.generateAsync({ type: "blob" });
-      saveAs(zipBlob, "jsonvas-carousel.zip");
-    } finally {
-      cleanupInjectedCSS(injected);
-    }
-  };
-
-  const handleMergeExport = async (direction: "horizontal" | "vertical") => {
-    const { toPng } = await import("html-to-image");
-    const saveAs = await getSaveAs();
-    const injected = await injectCrossOriginCSS();
-    try {
-      const dataUrls = await captureSlides(toPng);
-      if (dataUrls.length === 0) return;
-
-      // Load all images
-      const images = await Promise.all(
-        dataUrls.map(
-          (url) =>
-            new Promise<HTMLImageElement>((resolve, reject) => {
-              const img = new Image();
-              img.onload = () => resolve(img);
-              img.onerror = reject;
-              img.src = url;
-            })
-        )
-      );
-
-      const doc = getDocument();
-      const sw = doc.documentSize.width * 2; // pixelRatio 2
-      const sh = doc.documentSize.height * 2;
-
-      const canvas = document.createElement("canvas");
-      if (direction === "horizontal") {
-        canvas.width = sw * images.length;
-        canvas.height = sh;
-      } else {
-        canvas.width = sw;
-        canvas.height = sh * images.length;
-      }
-
-      const ctx = canvas.getContext("2d")!;
-      for (let i = 0; i < images.length; i++) {
-        const x = direction === "horizontal" ? sw * i : 0;
-        const y = direction === "vertical" ? sh * i : 0;
-        ctx.drawImage(images[i], x, y, sw, sh);
-      }
-
-      canvas.toBlob((blob) => {
-        if (blob) saveAs(blob, `jsonvas-merged-${direction}.png`);
-      }, "image/png");
-    } finally {
-      cleanupInjectedCSS(injected);
-    }
-  };
-
   if (!open) {
     return (
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <button
-          className={styles.btnSecondary}
-          onClick={() => setOpen(true)}
-          style={parseError ? { borderColor: "var(--danger)", color: "var(--danger)" } : undefined}
-        >
-          JSON
-        </button>
-        {parseError && (
-          <span className={b.statusError} style={{ fontSize: 10, maxWidth: 180 }} title={parseError}>
-            {parseError}
-          </span>
-        )}
-        <div style={{ position: "relative" }}>
-          <button className={styles.btnSecondary} onClick={() => setExportMenu((v) => !v)}>
-            Export ▾
-          </button>
-          {exportMenu && (
-            <div
-              ref={exportMenuRef}
-              style={{
-                position: "absolute",
-                top: "100%",
-                right: 0,
-                marginTop: 4,
-                background: "#fff",
-                border: "1px solid var(--input-border)",
-                borderRadius: 8,
-                boxShadow: "0 4px 16px rgba(0,0,0,.12)",
-                zIndex: 100,
-                minWidth: 180,
-                overflow: "hidden",
-              }}
-            >
-              <button
-                className={b.exportMenuItem}
-                onClick={() => { setExportMenu(false); handleExport(); }}
-              >
-                Download ZIP
-              </button>
-              <button
-                className={b.exportMenuItem}
-                onClick={() => { setExportMenu(false); handleMergeExport("horizontal"); }}
-              >
-                Merge Horizontal
-              </button>
-              <button
-                className={b.exportMenuItem}
-                onClick={() => { setExportMenu(false); handleMergeExport("vertical"); }}
-              >
-                Merge Vertical
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
+      <button
+        onClick={() => setOpen(true)}
+        title={parseError ? `JSON Editor — ${parseError}` : "JSON Editor"}
+        style={{
+          padding: "4px 8px",
+          fontSize: 12,
+          fontWeight: 600,
+          fontFamily: "var(--font-mono)",
+          color: parseError ? "var(--danger)" : "var(--text-secondary)",
+          background: "none",
+          border: `1px solid ${parseError ? "var(--danger)" : "var(--input-border)"}`,
+          borderRadius: 6,
+          lineHeight: 1,
+        }}
+      >
+        {"{ }"}
+      </button>
     );
   }
 

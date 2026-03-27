@@ -12,6 +12,7 @@ import type {
   ChartDataPoint,
 } from "@/types/schema";
 import { RenderIcon, legacyNameToLucide } from "@/data/iconLibraries";
+import { resolveMediaSrc } from "@/utils/media";
 import styles from "./slides.module.css";
 
 interface SlideProps {
@@ -20,6 +21,7 @@ interface SlideProps {
   assets: AssetItem[];
   size: DocumentSize;
   language?: string;
+  projectDir?: string | null;
   activeElementId?: string | null;
   onElementClick?: (id: string) => void;
   onBackgroundClick?: () => void;
@@ -146,6 +148,7 @@ function ElementRenderer({
   theme,
   slide,
   assets,
+  projectDir,
   isActive,
   onClick,
   activeElementId,
@@ -156,6 +159,7 @@ function ElementRenderer({
   theme: ThemeNode;
   slide: SlideContent;
   assets: AssetItem[];
+  projectDir?: string | null;
   isActive: boolean;
   onClick?: (e?: React.MouseEvent) => void;
   activeElementId?: string | null;
@@ -240,7 +244,7 @@ function ElementRenderer({
         >
           {el.content ? (
             <img
-              src={el.content}
+              src={resolveMediaSrc(el.content, projectDir)}
               alt=""
               style={{
                 width: "100%",
@@ -394,6 +398,7 @@ function ElementRenderer({
               theme={theme}
               slide={slide}
               assets={assets}
+              projectDir={projectDir}
               isActive={activeElementId === child.id}
               activeElementId={activeElementId}
               onElementClick={onElementClick}
@@ -639,7 +644,7 @@ function ElementRenderer({
       const asset = el.assetId
         ? assets.find((a) => a.id === el.assetId)
         : assets[0];
-      const src = asset?.data;
+      const src = resolveMediaSrc(asset?.data, projectDir);
       if (!src) return null;
 
       const tintColor = asset?.tintable
@@ -702,7 +707,7 @@ const layerBase: React.CSSProperties = {
 };
 
 export const SlideRenderer = forwardRef<HTMLDivElement, SlideProps>(
-  function SlideRenderer({ slide, theme, assets, size, language, activeElementId, onElementClick, onBackgroundClick }, ref) {
+  function SlideRenderer({ slide, theme, assets, size, language, projectDir, activeElementId, onElementClick, onBackgroundClick }, ref) {
     // Resolve background preset: merge preset defaults with slide-level overrides
     const ss: SlideStyle | undefined = (() => {
       const raw = slide.style;
@@ -756,12 +761,13 @@ export const SlideRenderer = forwardRef<HTMLDivElement, SlideProps>(
       ? assets.find((a) => a.id === ss.backgroundAssetId)
       : undefined;
     let bgImageStyle: React.CSSProperties | undefined;
-    if (bgAsset?.data) {
+    const bgAssetSrc = resolveMediaSrc(bgAsset?.data, projectDir);
+    if (bgAssetSrc) {
       const sizeMode = ss?.backgroundAssetSize ?? "cover";
       const isRepeat = sizeMode === "repeat";
       bgImageStyle = {
         ...layerBase,
-        backgroundImage: `url(${bgAsset.data})`,
+        backgroundImage: `url(${bgAssetSrc})`,
         backgroundSize: isRepeat ? "auto" : sizeMode,
         backgroundRepeat: isRepeat ? "repeat" : "no-repeat",
         backgroundPosition: ss?.backgroundAssetPosition ?? "center",
@@ -810,6 +816,7 @@ export const SlideRenderer = forwardRef<HTMLDivElement, SlideProps>(
               theme={theme}
               slide={slide}
               assets={assets}
+              projectDir={projectDir}
               isActive={activeElementId === el.id}
               activeElementId={activeElementId}
               onElementClick={onElementClick}

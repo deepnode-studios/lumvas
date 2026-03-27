@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type {
-  JsonvasDocument,
+  LumvasDocument,
   DocumentSize,
   ThemeNode,
   AssetItem,
@@ -108,7 +108,7 @@ export function createTitleSlide(): SlideContent {
       {
         id: uid(),
         type: "text",
-        content: "Welcome to Jsonvas",
+        content: "Welcome to Lumvas",
         fontSize: 72,
         fontWeight: 800,
         textAlign: "center",
@@ -454,13 +454,21 @@ function getElementContext(
 
 import defaultDocJson from "@/data/defaultDocument.json";
 
-const DEFAULT_DOC: JsonvasDocument = defaultDocJson as unknown as JsonvasDocument;
+export const DEFAULT_DOC: LumvasDocument = defaultDocJson as unknown as LumvasDocument;
+
+export const EMPTY_DOC: LumvasDocument = {
+  documentSize: DOCUMENT_SIZES[0],
+  language: "en",
+  assets: { items: [] },
+  theme: DEFAULT_THEME,
+  content: { slides: [createBlankSlide()] },
+};
 
 /* ─── Store ─── */
 
 /* ─── Undo / Redo history ─── */
 
-type DocSnapshot = Pick<JsonvasDocument, "documentSize" | "assets" | "theme" | "content">;
+type DocSnapshot = Pick<LumvasDocument, "documentSize" | "assets" | "theme" | "content">;
 
 const MAX_HISTORY = 50;
 const undoStack: DocSnapshot[] = [];
@@ -477,7 +485,7 @@ function takeSnapshot(s: DocSnapshot) {
   redoStack.length = 0; // clear redo on new action
 }
 
-interface JsonvasStore extends JsonvasDocument {
+interface LumvasStore extends LumvasDocument {
   setDocumentSize: (size: DocumentSize) => void;
   setLanguage: (lang: string) => void;
   updateTheme: (patch: Partial<ThemeNode>) => void;
@@ -518,8 +526,8 @@ interface JsonvasStore extends JsonvasDocument {
   findElementParentId: (slideId: string, elementId: string) => string | null;
 
   // LLM bridge
-  getDocument: () => JsonvasDocument;
-  importDocument: (doc: JsonvasDocument) => void;
+  getDocument: () => LumvasDocument;
+  importDocument: (doc: LumvasDocument) => void;
 
   // Undo / Redo
   undo: () => void;
@@ -534,7 +542,7 @@ interface JsonvasStore extends JsonvasDocument {
   setActiveElement: (id: string | null) => void;
 }
 
-export const useJsonvasStore = create<JsonvasStore>((_set, get) => {
+export const useLumvasStore = create<LumvasStore>((_set, get) => {
   // Wrap set to auto-snapshot before each mutation
   let _skipSnapshot = false;
   const set: typeof _set = (partial, replace?) => {

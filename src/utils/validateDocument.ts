@@ -1,0 +1,9 @@
+import type { LumvasDocument } from "@/types/schema";
+
+export function validateLumvasDocument(obj: unknown): obj is LumvasDocument {
+  if (!obj || typeof obj !== "object") return false;
+  const d = obj as Record<string, unknown>;
+  if (!d.assets || !d.theme || !d.content) return false;
+  const c = d.content as Record<string, unknown>;
+  return Array.isArray(c.slides);
+}

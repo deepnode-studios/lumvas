@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { SlideTemplate } from "@/types/schema";
 import { BUILT_IN_TEMPLATES } from "./templates";
 
-const STORAGE_KEY = "jsonvas-custom-templates";
+const STORAGE_KEY = "lumvas-custom-templates";
 
 function loadCustomTemplates(): SlideTemplate[] {
   if (typeof window === "undefined") return [];

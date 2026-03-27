@@ -1,4 +1,4 @@
-/* ─── Jsonvas Document Schema ─── */
+/* ─── Lumvas Document Schema ─── */
 
 export type IconLibrary = "lucide" | "phosphor" | "remix";
 
@@ -201,7 +201,7 @@ export interface ContentNode {
   slides: SlideContent[];
 }
 
-export interface JsonvasDocument {
+export interface LumvasDocument {
   documentSize: DocumentSize;
   language?: string; // BCP 47 language tag (e.g. "en", "tr", "de") — used for locale-aware text rendering
   assets: AssetNode;

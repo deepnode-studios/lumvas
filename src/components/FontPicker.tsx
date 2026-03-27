@@ -1,6 +1,6 @@
 "use client";
 
-import { useJsonvasStore } from "@/store/useJsonvasStore";
+import { useLumvasStore } from "@/store/useLumvasStore";
 
 interface FontPickerProps {
   value: string | undefined;
@@ -8,7 +8,7 @@ interface FontPickerProps {
 }
 
 export function FontPicker({ value, onChange }: FontPickerProps) {
-  const fonts = useJsonvasStore((s) => s.theme.fonts);
+  const fonts = useLumvasStore((s) => s.theme.fonts);
 
   return (
     <select

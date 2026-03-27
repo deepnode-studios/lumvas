@@ -1,7 +1,10 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { useJsonvasStore } from "@/store/useJsonvasStore";
+import { useLumvasStore } from "@/store/useLumvasStore";
+import { useFileStore } from "@/store/useFileStore";
+import { writeMediaFromDataUri } from "@/utils/lumvasFile";
+import { resolveMediaSrc } from "@/utils/media";
 import { PanelSection } from "./PanelSection";
 import type { AssetItem } from "@/types/schema";
 import styles from "@/styles/workspace.module.css";
@@ -20,17 +23,29 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
+/** Upload a file: writes to project media/ if saved, otherwise keeps as base64 */
+async function uploadFile(file: File, prefix: string = "asset"): Promise<string> {
+  const b64 = await fileToBase64(file);
+  const projectDir = useFileStore.getState().currentFilePath;
+  if (projectDir) {
+    return await writeMediaFromDataUri(projectDir, b64, prefix);
+  }
+  return b64;
+}
+
 function AssetCard({ asset }: { asset: AssetItem }) {
-  const updateAsset = useJsonvasStore((s) => s.updateAsset);
-  const removeAsset = useJsonvasStore((s) => s.removeAsset);
+  const updateAsset = useLumvasStore((s) => s.updateAsset);
+  const removeAsset = useLumvasStore((s) => s.removeAsset);
   const fileRef = useRef<HTMLInputElement>(null);
   const [editing, setEditing] = useState(false);
+  const projectDir = useFileStore((s) => s.currentFilePath);
+  const src = resolveMediaSrc(asset.data, projectDir);
 
   const handleReplace = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const b64 = await fileToBase64(file);
-    updateAsset(asset.id, { data: b64 });
+    const data = await uploadFile(file, "asset");
+    updateAsset(asset.id, { data });
   };
 
   return (
@@ -47,7 +62,7 @@ function AssetCard({ asset }: { asset: AssetItem }) {
       <div className={a.assetPreview} onClick={() => fileRef.current?.click()}>
         {asset.data ? (
           <>
-            <img src={asset.data} alt={asset.label} className={a.assetImg} />
+            <img src={src} alt={asset.label} className={a.assetImg} />
             <div className={a.replaceOverlay}>
               <span className={a.replaceLabel}>Replace</span>
             </div>
@@ -137,20 +152,20 @@ function AssetCard({ asset }: { asset: AssetItem }) {
 }
 
 export function AssetManager() {
-  const items = useJsonvasStore((s) => s.assets.items);
-  const addAsset = useJsonvasStore((s) => s.addAsset);
+  const items = useLumvasStore((s) => s.assets.items);
+  const addAsset = useLumvasStore((s) => s.addAsset);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleAdd = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const b64 = await fileToBase64(file);
+    const data = await uploadFile(file, "asset");
     const name = file.name.replace(/\.[^/.]+$/, "");
     const asset: AssetItem = {
       id: uid(),
       label: name,
       description: "",
-      data: b64,
+      data,
     };
     addAsset(asset);
     e.target.value = "";

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useJsonvasStore } from "@/store/useJsonvasStore";
+import { useLumvasStore } from "@/store/useLumvasStore";
 import { useTemplateStore } from "@/store/useTemplateStore";
 import { TEMPLATE_CATEGORIES } from "@/store/templates";
 import { instantiateTemplate, slideToTemplate } from "@/store/templates";
@@ -12,10 +12,10 @@ import g from "./templateGallery.module.css";
 
 /** Mini slide preview — renders the real slide at a tiny scale */
 function TemplatePreview({ template }: { template: SlideTemplate }) {
-  const theme = useJsonvasStore((s) => s.theme);
-  const assets = useJsonvasStore((s) => s.assets.items);
-  const size = useJsonvasStore((s) => s.documentSize);
-  const language = useJsonvasStore((s) => s.language);
+  const theme = useLumvasStore((s) => s.theme);
+  const assets = useLumvasStore((s) => s.assets.items);
+  const size = useLumvasStore((s) => s.documentSize);
+  const language = useLumvasStore((s) => s.language);
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0.2);
 
@@ -65,8 +65,8 @@ interface TemplateGalleryProps {
 }
 
 export function TemplateGallery({ open, onClose, saveSlideId }: TemplateGalleryProps) {
-  const addSlide = useJsonvasStore((s) => s.addSlide);
-  const slides = useJsonvasStore((s) => s.content.slides);
+  const addSlide = useLumvasStore((s) => s.addSlide);
+  const slides = useLumvasStore((s) => s.content.slides);
   const allTemplates = useTemplateStore((s) => s.allTemplates);
   const addCustomTemplate = useTemplateStore((s) => s.addCustomTemplate);
   const removeCustomTemplate = useTemplateStore((s) => s.removeCustomTemplate);

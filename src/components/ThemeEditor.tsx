@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useJsonvasStore, DOCUMENT_SIZES, FONT_OPTIONS } from "@/store/useJsonvasStore";
+import { useLumvasStore, DOCUMENT_SIZES, FONT_OPTIONS } from "@/store/useLumvasStore";
 import { PanelSection } from "./PanelSection";
 import { ColorPicker } from "./ColorPicker";
 import { GradientEditor } from "./GradientEditor";
@@ -14,8 +14,8 @@ function uid(): string {
 }
 
 function PaletteColorRow({ color }: { color: ColorToken }) {
-  const updatePaletteColor = useJsonvasStore((s) => s.updatePaletteColor);
-  const removePaletteColor = useJsonvasStore((s) => s.removePaletteColor);
+  const updatePaletteColor = useLumvasStore((s) => s.updatePaletteColor);
+  const removePaletteColor = useLumvasStore((s) => s.removePaletteColor);
   const [editing, setEditing] = useState(false);
 
   return (
@@ -86,8 +86,8 @@ const systemFonts = FONT_OPTIONS.filter((f) => f.category === "system");
 const googleFonts = FONT_OPTIONS.filter((f) => f.category === "google");
 
 function FontRow({ font }: { font: FontToken }) {
-  const updateFont = useJsonvasStore((s) => s.updateFont);
-  const removeFont = useJsonvasStore((s) => s.removeFont);
+  const updateFont = useLumvasStore((s) => s.updateFont);
+  const removeFont = useLumvasStore((s) => s.removeFont);
   const [editing, setEditing] = useState(false);
   const [customMode, setCustomMode] = useState(false);
 
@@ -215,13 +215,13 @@ function bgPreviewStyle(preset: BackgroundPreset): React.CSSProperties {
 }
 
 function BackgroundPresetRow({ preset }: { preset: BackgroundPreset }) {
-  const updateBackgroundPreset = useJsonvasStore((s) => s.updateBackgroundPreset);
-  const removeBackgroundPreset = useJsonvasStore((s) => s.removeBackgroundPreset);
-  const assets = useJsonvasStore((s) => s.assets.items);
+  const updateBackgroundPreset = useLumvasStore((s) => s.updateBackgroundPreset);
+  const removeBackgroundPreset = useLumvasStore((s) => s.removeBackgroundPreset);
+  const assets = useLumvasStore((s) => s.assets.items);
   const [editing, setEditing] = useState(false);
 
   // Count how many slides use this preset
-  const slides = useJsonvasStore((s) => s.content.slides);
+  const slides = useLumvasStore((s) => s.content.slides);
   const usageCount = slides.filter(
     (sl) => sl.style?.backgroundPresetId === preset.id
   ).length;
@@ -469,15 +469,15 @@ function BackgroundPresetRow({ preset }: { preset: BackgroundPreset }) {
 }
 
 export function ThemeEditor() {
-  const theme = useJsonvasStore((s) => s.theme);
-  const updateTheme = useJsonvasStore((s) => s.updateTheme);
-  const addPaletteColor = useJsonvasStore((s) => s.addPaletteColor);
-  const addFont = useJsonvasStore((s) => s.addFont);
-  const addBackgroundPreset = useJsonvasStore((s) => s.addBackgroundPreset);
-  const documentSize = useJsonvasStore((s) => s.documentSize);
-  const setDocumentSize = useJsonvasStore((s) => s.setDocumentSize);
-  const language = useJsonvasStore((s) => s.language) ?? "en";
-  const setLanguage = useJsonvasStore((s) => s.setLanguage);
+  const theme = useLumvasStore((s) => s.theme);
+  const updateTheme = useLumvasStore((s) => s.updateTheme);
+  const addPaletteColor = useLumvasStore((s) => s.addPaletteColor);
+  const addFont = useLumvasStore((s) => s.addFont);
+  const addBackgroundPreset = useLumvasStore((s) => s.addBackgroundPreset);
+  const documentSize = useLumvasStore((s) => s.documentSize);
+  const setDocumentSize = useLumvasStore((s) => s.setDocumentSize);
+  const language = useLumvasStore((s) => s.language) ?? "en";
+  const setLanguage = useLumvasStore((s) => s.setLanguage);
   const bgPresets = theme.backgroundPresets ?? [];
 
   const sizeKey = `${documentSize.width}x${documentSize.height}`;

@@ -1,7 +1,9 @@
 "use client";
 
 import { useRef, useState, useCallback, useEffect } from "react";
-import { useJsonvasStore, createElement } from "@/store/useJsonvasStore";
+import { useLumvasStore, createElement } from "@/store/useLumvasStore";
+import { useFileStore } from "@/store/useFileStore";
+import { writeMediaFromDataUri } from "@/utils/lumvasFile";
 import type { ElementType, SlideElement, FlexAlign, FlexJustify, FlexDirection, BackgroundPattern, IconLibrary, ChartType, ChartDataPoint } from "@/types/schema";
 import { legacyNameToLucide } from "@/data/iconLibraries";
 import { TemplateGallery } from "./TemplateGallery";
@@ -48,6 +50,15 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
+async function uploadMediaFile(file: File, prefix: string = "img"): Promise<string> {
+  const b64 = await fileToBase64(file);
+  const projectDir = useFileStore.getState().currentFilePath;
+  if (projectDir) {
+    return await writeMediaFromDataUri(projectDir, b64, prefix);
+  }
+  return b64;
+}
+
 function ElementEditor({
   el,
   slideId,
@@ -55,8 +66,8 @@ function ElementEditor({
   el: SlideElement;
   slideId: string;
 }) {
-  const updateElement = useJsonvasStore((s) => s.updateElement);
-  const assetItems = useJsonvasStore((s) => s.assets.items);
+  const updateElement = useLumvasStore((s) => s.updateElement);
+  const assetItems = useLumvasStore((s) => s.assets.items);
   const imgInputRef = useRef<HTMLInputElement>(null);
 
   const update = (patch: Partial<SlideElement>) =>
@@ -65,8 +76,8 @@ function ElementEditor({
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const b64 = await fileToBase64(file);
-    update({ content: b64 });
+    const data = await uploadMediaFile(file, "img");
+    update({ content: data });
   };
 
   return (
@@ -834,12 +845,12 @@ function ElementListItem({
   const handleDragStart = useCallback((e: React.DragEvent) => {
     e.stopPropagation();
     const payload: DragPayload = { elementId: el.id };
-    e.dataTransfer.setData("application/jsonvas-element", JSON.stringify(payload));
+    e.dataTransfer.setData("application/lumvas-element", JSON.stringify(payload));
     e.dataTransfer.effectAllowed = "move";
   }, [el.id]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
-    if (!e.dataTransfer.types.includes("application/jsonvas-element")) return;
+    if (!e.dataTransfer.types.includes("application/lumvas-element")) return;
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = "move";
@@ -865,7 +876,7 @@ function ElementListItem({
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const raw = e.dataTransfer.getData("application/jsonvas-element");
+    const raw = e.dataTransfer.getData("application/lumvas-element");
     if (!raw) return;
 
     const payload: DragPayload = JSON.parse(raw);
@@ -1018,18 +1029,18 @@ function ElementEditorSection({ el, slideId }: { el: SlideElement; slideId: stri
 }
 
 export function CarouselBuilder() {
-  const slides = useJsonvasStore((s) => s.content.slides);
-  const activeSlideId = useJsonvasStore((s) => s.activeSlideId);
-  const activeElementId = useJsonvasStore((s) => s.activeElementId);
-  const updateSlide = useJsonvasStore((s) => s.updateSlide);
-  const removeSlide = useJsonvasStore((s) => s.removeSlide);
-  const reorderSlides = useJsonvasStore((s) => s.reorderSlides);
-  const setActiveSlide = useJsonvasStore((s) => s.setActiveSlide);
-  const setActiveElement = useJsonvasStore((s) => s.setActiveElement);
-  const addElement = useJsonvasStore((s) => s.addElement);
-  const removeElement = useJsonvasStore((s) => s.removeElement);
-  const moveElement = useJsonvasStore((s) => s.moveElement);
-  const assetItems = useJsonvasStore((s) => s.assets.items);
+  const slides = useLumvasStore((s) => s.content.slides);
+  const activeSlideId = useLumvasStore((s) => s.activeSlideId);
+  const activeElementId = useLumvasStore((s) => s.activeElementId);
+  const updateSlide = useLumvasStore((s) => s.updateSlide);
+  const removeSlide = useLumvasStore((s) => s.removeSlide);
+  const reorderSlides = useLumvasStore((s) => s.reorderSlides);
+  const setActiveSlide = useLumvasStore((s) => s.setActiveSlide);
+  const setActiveElement = useLumvasStore((s) => s.setActiveElement);
+  const addElement = useLumvasStore((s) => s.addElement);
+  const removeElement = useLumvasStore((s) => s.removeElement);
+  const moveElement = useLumvasStore((s) => s.moveElement);
+  const assetItems = useLumvasStore((s) => s.assets.items);
 
   const [templateOpen, setTemplateOpen] = useState(false);
   const [saveMode, setSaveMode] = useState(false);
@@ -1197,7 +1208,7 @@ export function CarouselBuilder() {
               }}
             >
               <option value="">Custom</option>
-              {(useJsonvasStore.getState().theme.backgroundPresets ?? []).map((p) => (
+              {(useLumvasStore.getState().theme.backgroundPresets ?? []).map((p) => (
                 <option key={p.id} value={p.id}>{p.label}</option>
               ))}
             </select>
@@ -1210,7 +1221,7 @@ export function CarouselBuilder() {
               onClick={() => {
                 const id = `bg-${Math.random().toString(36).slice(2, 10)}`;
                 const { backgroundPresetId: _, primaryColor, secondaryColor, ...bgFields } = active.style!;
-                useJsonvasStore.getState().addBackgroundPreset({
+                useLumvasStore.getState().addBackgroundPreset({
                   id,
                   label: "From slide",
                   style: bgFields,

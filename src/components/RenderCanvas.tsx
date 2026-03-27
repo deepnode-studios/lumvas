@@ -1,11 +1,11 @@
 "use client";
 
-import { useRef, useState, useEffect, useCallback } from "react";
-import { useJsonvasStore } from "@/store/useJsonvasStore";
+import { useRef, useEffect, useCallback } from "react";
+import { useLumvasStore } from "@/store/useLumvasStore";
+import { useFileStore } from "@/store/useFileStore";
+import { useViewStore, type ViewMode } from "@/store/useViewStore";
 import { SlideRenderer } from "@/components/slides/SlideRenderer";
 import canvasStyles from "./renderCanvas.module.css";
-
-type ViewMode = "single" | "horizontal" | "vertical";
 
 const ZOOM_STEPS = [0.1, 0.15, 0.25, 0.33, 0.5, 0.67, 0.75, 1, 1.25, 1.5, 2];
 const DEFAULT_ZOOM_INDEX = 4; // 0.5
@@ -15,18 +15,21 @@ function clamp(val: number, min: number, max: number) {
 }
 
 export function RenderCanvas() {
-  const slides = useJsonvasStore((s) => s.content.slides);
-  const theme = useJsonvasStore((s) => s.theme);
-  const assets = useJsonvasStore((s) => s.assets.items);
-  const size = useJsonvasStore((s) => s.documentSize);
-  const language = useJsonvasStore((s) => s.language);
-  const activeSlideId = useJsonvasStore((s) => s.activeSlideId);
-  const setActiveSlide = useJsonvasStore((s) => s.setActiveSlide);
-  const activeElementId = useJsonvasStore((s) => s.activeElementId);
-  const setActiveElement = useJsonvasStore((s) => s.setActiveElement);
+  const slides = useLumvasStore((s) => s.content.slides);
+  const theme = useLumvasStore((s) => s.theme);
+  const assets = useLumvasStore((s) => s.assets.items);
+  const size = useLumvasStore((s) => s.documentSize);
+  const language = useLumvasStore((s) => s.language);
+  const activeSlideId = useLumvasStore((s) => s.activeSlideId);
+  const setActiveSlide = useLumvasStore((s) => s.setActiveSlide);
+  const activeElementId = useLumvasStore((s) => s.activeElementId);
+  const setActiveElement = useLumvasStore((s) => s.setActiveElement);
   const slideRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  const [viewMode, setViewMode] = useState<ViewMode>("vertical");
-  const [zoomIdx, setZoomIdx] = useState(DEFAULT_ZOOM_INDEX);
+  const viewMode = useViewStore((s) => s.viewMode);
+  const setViewMode = useViewStore((s) => s.setViewMode);
+  const zoomIdx = useViewStore((s) => s.zoomIndex);
+  const setZoomIdx = useViewStore((s) => s.setZoomIndex);
+  const projectDir = useFileStore((s) => s.currentFilePath);
   const canvasRef = useRef<HTMLDivElement>(null);
 
   const zoom = ZOOM_STEPS[zoomIdx];
@@ -36,65 +39,43 @@ export function RenderCanvas() {
 
 
   const zoomIn = useCallback(() => {
-    setZoomIdx((i) => clamp(i + 1, 0, ZOOM_STEPS.length - 1));
-  }, []);
+    setZoomIdx(clamp(useViewStore.getState().zoomIndex + 1, 0, ZOOM_STEPS.length - 1));
+  }, [setZoomIdx]);
 
   const zoomOut = useCallback(() => {
-    setZoomIdx((i) => clamp(i - 1, 0, ZOOM_STEPS.length - 1));
-  }, []);
+    setZoomIdx(clamp(useViewStore.getState().zoomIndex - 1, 0, ZOOM_STEPS.length - 1));
+  }, [setZoomIdx]);
 
   const zoomFit = useCallback(() => {
     setZoomIdx(DEFAULT_ZOOM_INDEX);
   }, []);
 
-  // Keyboard shortcuts
+  // Arrow keys to navigate slides
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const mod = e.metaKey || e.ctrlKey;
-
-      // Ctrl/Cmd + = / + → zoom in
-      if (mod && (e.key === "=" || e.key === "+")) {
-        e.preventDefault();
-        zoomIn();
-      }
-      // Ctrl/Cmd + - → zoom out
-      if (mod && e.key === "-") {
-        e.preventDefault();
-        zoomOut();
-      }
-      // Ctrl/Cmd + 0 → fit to view
-      if (mod && e.key === "0") {
-        e.preventDefault();
-        zoomFit();
-      }
-      // Ctrl/Cmd + 1 → 100%
-      if (mod && e.key === "1") {
-        e.preventDefault();
-        setZoomIdx(ZOOM_STEPS.indexOf(1));
-      }
-      // Arrow left / right to navigate slides (no modifier, not in an input)
       const tag = (e.target as HTMLElement).tagName;
-      if (!mod && !e.shiftKey && !e.altKey && tag !== "INPUT" && tag !== "TEXTAREA" && tag !== "SELECT") {
-        if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
-          const idx = slides.findIndex((s) => s.id === activeSlideId);
-          if (idx > 0) {
-            e.preventDefault();
-            setActiveSlide(slides[idx - 1].id);
-          }
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
+      if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+        const idx = slides.findIndex((s) => s.id === activeSlideId);
+        if (idx > 0) {
+          e.preventDefault();
+          setActiveSlide(slides[idx - 1].id);
         }
-        if (e.key === "ArrowRight" || e.key === "ArrowDown") {
-          const idx = slides.findIndex((s) => s.id === activeSlideId);
-          if (idx < slides.length - 1) {
-            e.preventDefault();
-            setActiveSlide(slides[idx + 1].id);
-          }
+      }
+      if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+        const idx = slides.findIndex((s) => s.id === activeSlideId);
+        if (idx < slides.length - 1) {
+          e.preventDefault();
+          setActiveSlide(slides[idx + 1].id);
         }
       }
     };
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [zoomIn, zoomOut, zoomFit, slides, activeSlideId, setActiveSlide]);
+  }, [slides, activeSlideId, setActiveSlide]);
 
   // Ctrl/Cmd + scroll wheel to zoom
   useEffect(() => {
@@ -194,6 +175,7 @@ export function RenderCanvas() {
                     assets={assets}
                     size={size}
                     language={language}
+                    projectDir={projectDir}
                     activeElementId={activeElementId}
                     onElementClick={setActiveElement}
                     onBackgroundClick={() => setActiveElement(null)}
@@ -241,6 +223,7 @@ export function RenderCanvas() {
                       theme={theme}
                       assets={assets}
                       size={size}
+                      projectDir={projectDir}
                       activeElementId={slide.id === activeSlideId ? activeElementId : null}
                       onElementClick={(id) => {
                         setActiveSlide(slide.id);
@@ -282,6 +265,7 @@ export function RenderCanvas() {
             assets={assets}
             size={size}
             language={language}
+            projectDir={projectDir}
           />
         ))}
       </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useJsonvasStore, FONT_OPTIONS } from "@/store/useJsonvasStore";
+import { useLumvasStore, FONT_OPTIONS } from "@/store/useLumvasStore";
 
 /**
  * Extracts the primary font family name from a CSS font-family string.
@@ -28,7 +28,7 @@ const GOOGLE_FAMILIES = new Set(
  * Also handles custom font-family strings that look like Google font names.
  */
 export function useGoogleFonts() {
-  const fonts = useJsonvasStore((s) => s.theme.fonts);
+  const fonts = useLumvasStore((s) => s.theme.fonts);
   const loadedRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
