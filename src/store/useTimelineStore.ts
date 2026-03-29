@@ -39,6 +39,14 @@ interface TimelineStore {
   // Snapping
   snapEnabled: boolean;
   toggleSnap: () => void;
+
+  // FX panel
+  fxOpen: boolean;
+  toggleFx: () => void;
+
+  // Scene isolation (pre-composition)
+  editingSceneId: string | null;
+  setEditingScene: (id: string | null) => void;
 }
 
 /** Get total video duration: max of scene durations and audio track end times */
@@ -109,4 +117,10 @@ export const useTimelineStore = create<TimelineStore>((set, get) => ({
 
   snapEnabled: true,
   toggleSnap: () => set((s) => ({ snapEnabled: !s.snapEnabled })),
+
+  fxOpen: false,
+  toggleFx: () => set((s) => ({ fxOpen: !s.fxOpen })),
+
+  editingSceneId: null,
+  setEditingScene: (id) => set({ editingSceneId: id, currentTimeMs: 0 }),
 }));

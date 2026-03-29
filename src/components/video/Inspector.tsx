@@ -2,9 +2,10 @@ import { useState } from "react";
 import { useLumvasStore, selectVideoContent } from "@/store/useLumvasStore";
 import { useTimelineStore, getSceneAtTime, getSceneStartMs, type InspectorTarget } from "@/store/useTimelineStore";
 import type {
-  SceneElement, AnimationPreset, AudioTrackType, CaptionStyle,
+  SceneElement, AudioTrackType, CaptionStyle,
   CaptionTrack, CaptionSegment, AudioTrack, VideoScene,
 } from "@/types/schema";
+import { getEffectDefinition, EFFECT_DEFINITIONS } from "@/data/effectsLibrary";
 import styles from "./videoWorkspace.module.css";
 
 function uid(): string {
@@ -12,21 +13,6 @@ function uid(): string {
 }
 
 /* ===== CONSTANTS ===== */
-
-const ANIMATION_PRESETS: { value: AnimationPreset; label: string }[] = [
-  { value: "none", label: "None" },
-  { value: "fade-in", label: "Fade In" },
-  { value: "slide-up", label: "Slide Up" },
-  { value: "slide-down", label: "Slide Down" },
-  { value: "slide-left", label: "Slide Left" },
-  { value: "slide-right", label: "Slide Right" },
-  { value: "scale-in", label: "Scale In" },
-  { value: "pop-in", label: "Pop In" },
-  { value: "drop-in", label: "Drop In" },
-  { value: "blur-in", label: "Blur In" },
-  { value: "zoom-in", label: "Zoom In" },
-  { value: "typewriter", label: "Typewriter" },
-];
 
 const AUDIO_TRACK_TYPES: { value: AudioTrackType; label: string; color: string }[] = [
   { value: "narration", label: "Narration", color: "#4ecdc4" },
@@ -67,12 +53,29 @@ function SceneInspector({ scene, sceneIndex }: { scene: VideoScene; sceneIndex: 
   const addSceneElement = useLumvasStore((s) => s.addSceneElement);
   const vc = useLumvasStore((s) => selectVideoContent(s));
 
-  const handleAddElement = (type: "text" | "image" | "icon" | "divider" | "spacer") => {
+  const handleAddElement = (type: "text" | "image" | "icon" | "divider" | "spacer" | "counter" | "path" | "svg" | "indicator") => {
+    const defaults: Record<string, object> = {
+      counter: { counterStart: 0, counterEnd: 100, fontSize: 64, fontWeight: 700 },
+      path: { pathStrokeWidth: 3, pathLinecap: "round" },
+      indicator: { indicatorRadius: 40, pathStrokeWidth: 3 },
+    };
     addSceneElement(scene.id, {
       id: uid(),
       type,
-      content: type === "text" ? "New Text" : "",
-      timing: { enterMs: 0, enterAnimation: { preset: "fade-in", durationMs: 500 } },
+      content: type === "text" ? "New Text" : type === "path" ? "M 0 0 L 200 0" : type === "svg" ? '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" fill="currentColor"/></svg>' : "",
+      timing: {
+        enterMs: 0,
+        effects: [{
+          id: uid(),
+          definitionId: "fade-in",
+          trigger: "enter" as const,
+          durationMs: 500,
+          delayMs: 0,
+          enabled: true,
+          params: { durationMs: 500, easing: "ease-out" },
+        }],
+      },
+      ...(defaults[type] ?? {}),
     });
   };
 
@@ -225,7 +228,7 @@ function SceneInspector({ scene, sceneIndex }: { scene: VideoScene; sceneIndex: 
       <div className={styles.panelSection}>
         <SectionTitle>Add Element</SectionTitle>
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-          {(["text", "image", "icon", "divider", "spacer"] as const).map((type) => (
+          {(["text", "image", "icon", "divider", "spacer", "counter", "path", "svg", "indicator"] as const).map((type) => (
             <button
               key={type}
               style={{ padding: "5px 10px", fontSize: 11, fontWeight: 500, color: "#aaa", background: "#2a2a2e", border: "1px solid #3a3a3e", borderRadius: 4, cursor: "pointer" }}
@@ -361,6 +364,103 @@ function ElementInspector({ sceneId, elementId }: { sceneId: string; elementId: 
           </>
         )}
 
+          {/* Counter */}
+        {el.type === "counter" && (
+          <>
+            <Row label="From">
+              <input type="number" value={el.counterStart ?? 0} onChange={(e) => updateSceneElement(sceneId, el.id, { counterStart: Number(e.target.value) })} style={{ width: 70, fontSize: 11, padding: "3px 6px" }} />
+            </Row>
+            <Row label="To">
+              <input type="number" value={el.counterEnd ?? 100} onChange={(e) => updateSceneElement(sceneId, el.id, { counterEnd: Number(e.target.value) })} style={{ width: 70, fontSize: 11, padding: "3px 6px" }} />
+            </Row>
+            <Row label="Decimals">
+              <input type="number" min={0} max={4} value={el.counterDecimals ?? 0} onChange={(e) => updateSceneElement(sceneId, el.id, { counterDecimals: Number(e.target.value) })} style={{ width: 50, fontSize: 11, padding: "3px 6px" }} />
+            </Row>
+            <Row label="Prefix">
+              <input type="text" value={el.counterPrefix ?? ""} onChange={(e) => updateSceneElement(sceneId, el.id, { counterPrefix: e.target.value })} placeholder='e.g. "$"' style={{ flex: 1, fontSize: 11, padding: "3px 6px" }} />
+            </Row>
+            <Row label="Suffix">
+              <input type="text" value={el.counterSuffix ?? ""} onChange={(e) => updateSceneElement(sceneId, el.id, { counterSuffix: e.target.value })} placeholder='e.g. "%"' style={{ flex: 1, fontSize: 11, padding: "3px 6px" }} />
+            </Row>
+            <Row label="Font Size">
+              <input type="number" value={el.fontSize ?? 64} onChange={(e) => updateSceneElement(sceneId, el.id, { fontSize: Number(e.target.value) })} style={{ width: 60, fontSize: 11, padding: "3px 6px" }} />
+            </Row>
+            <Row label="Color">
+              <input type="color" value={el.color || "#ffffff"} onChange={(e) => updateSceneElement(sceneId, el.id, { color: e.target.value })} style={{ width: 28, height: 22, padding: 0, border: "1px solid #3a3a3e", borderRadius: 3, cursor: "pointer" }} />
+            </Row>
+          </>
+        )}
+
+        {/* Path */}
+        {el.type === "path" && (
+          <>
+            <Row label="Path (d)">
+              <textarea
+                value={el.content ?? ""}
+                onChange={(e) => updateSceneElement(sceneId, el.id, { content: e.target.value })}
+                placeholder='e.g. "M 0 0 L 400 0"'
+                style={{ flex: 1, fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "1px solid #3a3a3e", background: "#2a2a2e", color: "#ddd", resize: "vertical", minHeight: 50, fontFamily: "var(--font-mono)" }}
+              />
+            </Row>
+            <Row label="Stroke">
+              <input type="color" value={el.pathStroke || "#ffffff"} onChange={(e) => updateSceneElement(sceneId, el.id, { pathStroke: e.target.value })} style={{ width: 28, height: 22, padding: 0, border: "1px solid #3a3a3e", borderRadius: 3, cursor: "pointer" }} />
+            </Row>
+            <Row label="Width">
+              <input type="number" min={0.5} step={0.5} value={el.pathStrokeWidth ?? 2} onChange={(e) => updateSceneElement(sceneId, el.id, { pathStrokeWidth: Number(e.target.value) })} style={{ width: 60, fontSize: 11, padding: "3px 6px" }} />
+            </Row>
+            <Row label="Fill">
+              <input type="text" value={el.pathFill ?? "none"} onChange={(e) => updateSceneElement(sceneId, el.id, { pathFill: e.target.value })} placeholder="none" style={{ flex: 1, fontSize: 11, padding: "3px 6px" }} />
+            </Row>
+            <Row label="Linecap">
+              <select value={el.pathLinecap ?? "round"} onChange={(e) => updateSceneElement(sceneId, el.id, { pathLinecap: e.target.value as "butt" | "round" | "square" })} style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}>
+                <option value="round">Round</option>
+                <option value="butt">Butt</option>
+                <option value="square">Square</option>
+              </select>
+            </Row>
+            <Row label="Draw">
+              <span style={{ fontSize: 10, color: "#666" }}>Set keyframe drawProgress 0→1</span>
+            </Row>
+          </>
+        )}
+
+        {/* SVG */}
+        {el.type === "svg" && (
+          <>
+            <Row label="Markup">
+              <textarea
+                value={el.content ?? ""}
+                onChange={(e) => updateSceneElement(sceneId, el.id, { content: e.target.value })}
+                placeholder="<svg>...</svg>"
+                style={{ flex: 1, fontSize: 11, padding: "4px 6px", borderRadius: 4, border: "1px solid #3a3a3e", background: "#2a2a2e", color: "#ddd", resize: "vertical", minHeight: 80, fontFamily: "var(--font-mono)" }}
+              />
+            </Row>
+            <Row label="Opacity">
+              <input type="range" min={0} max={1} step={0.05} value={el.opacity ?? 1} onChange={(e) => updateSceneElement(sceneId, el.id, { opacity: Number(e.target.value) })} style={{ flex: 1, height: 3 }} />
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "#888", minWidth: 28 }}>{Math.round((el.opacity ?? 1) * 100)}%</span>
+            </Row>
+          </>
+        )}
+
+        {/* Indicator */}
+        {el.type === "indicator" && (
+          <>
+            <Row label="Radius">
+              <input type="number" min={10} max={300} value={el.indicatorRadius ?? 40} onChange={(e) => updateSceneElement(sceneId, el.id, { indicatorRadius: Number(e.target.value) })} style={{ width: 70, fontSize: 11, padding: "3px 6px" }} />
+              <span style={{ color: "#555", fontSize: 10 }}>px</span>
+            </Row>
+            <Row label="Color">
+              <input type="color" value={el.indicatorColor || el.color || "#ffffff"} onChange={(e) => updateSceneElement(sceneId, el.id, { indicatorColor: e.target.value })} style={{ width: 28, height: 22, padding: 0, border: "1px solid #3a3a3e", borderRadius: 3, cursor: "pointer" }} />
+            </Row>
+            <Row label="Stroke W">
+              <input type="number" min={1} max={20} value={el.pathStrokeWidth ?? 3} onChange={(e) => updateSceneElement(sceneId, el.id, { pathStrokeWidth: Number(e.target.value) })} style={{ width: 60, fontSize: 11, padding: "3px 6px" }} />
+            </Row>
+            <Row label="Pulse">
+              <span style={{ fontSize: 10, color: "#666" }}>Set keyframe drawProgress 0→1</span>
+            </Row>
+          </>
+        )}
+
         {/* Image asset ID */}
         {el.type === "image" && (
           <>
@@ -485,61 +585,39 @@ function ElementInspector({ sceneId, elementId }: { sceneId: string; elementId: 
         </Row>
       </div>
 
-      {/* Animations */}
+      {/* Effects */}
       <div className={styles.panelSection}>
-        <SectionTitle>Animations</SectionTitle>
-        <Row label="Enter">
-          <select
-            value={el.timing.enterAnimation?.preset ?? "none"}
-            onChange={(e) =>
-              updateElementTiming(sceneId, el.id, {
-                enterAnimation: { preset: e.target.value as AnimationPreset, durationMs: el.timing.enterAnimation?.durationMs ?? 500 },
-              })
-            }
-            style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
-          >
-            {ANIMATION_PRESETS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
-          </select>
-          {el.timing.enterAnimation && el.timing.enterAnimation.preset !== "none" && (
-            <input
-              type="number"
-              value={el.timing.enterAnimation.durationMs}
-              onChange={(e) =>
-                updateElementTiming(sceneId, el.id, {
-                  enterAnimation: { ...el.timing.enterAnimation!, durationMs: Number(e.target.value) },
-                })
-              }
-              style={{ width: 50, fontSize: 11, padding: "3px 6px" }}
-              title="Duration (ms)"
-            />
-          )}
-        </Row>
-        <Row label="Exit">
-          <select
-            value={el.timing.exitAnimation?.preset ?? "none"}
-            onChange={(e) =>
-              updateElementTiming(sceneId, el.id, {
-                exitAnimation: { preset: e.target.value as AnimationPreset, durationMs: el.timing.exitAnimation?.durationMs ?? 500 },
-              })
-            }
-            style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
-          >
-            {ANIMATION_PRESETS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
-          </select>
-          {el.timing.exitAnimation && el.timing.exitAnimation.preset !== "none" && (
-            <input
-              type="number"
-              value={el.timing.exitAnimation.durationMs}
-              onChange={(e) =>
-                updateElementTiming(sceneId, el.id, {
-                  exitAnimation: { ...el.timing.exitAnimation!, durationMs: Number(e.target.value) },
-                })
-              }
-              style={{ width: 50, fontSize: 11, padding: "3px 6px" }}
-              title="Duration (ms)"
-            />
-          )}
-        </Row>
+        <SectionTitle>Effects ({el.timing.effects?.length ?? 0})</SectionTitle>
+        {(el.timing.effects ?? []).length === 0 ? (
+          <p style={{ fontSize: 11, color: "#555", margin: "4px 0 8px" }}>
+            No effects applied.
+          </p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 8 }}>
+            {(el.timing.effects ?? []).map((effect) => {
+              const def = getEffectDefinition(effect.definitionId);
+              return (
+                <div key={effect.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: effect.enabled ? "#ddd" : "#555" }}>
+                  <span style={{ color: effect.enabled ? "#a78bfa" : "#444", fontSize: 13 }}>{def?.icon ?? "◆"}</span>
+                  <span style={{ flex: 1 }}>{def?.label ?? effect.definitionId}</span>
+                  <span style={{ fontSize: 10, color: "#555", background: "#2a2a2e", borderRadius: 3, padding: "1px 4px" }}>
+                    {effect.trigger}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <button
+          style={{
+            width: "100%", padding: "6px 0", fontSize: 11, fontWeight: 600,
+            color: "#a78bfa", background: "rgba(167,139,250,0.08)",
+            border: "1px solid rgba(167,139,250,0.3)", borderRadius: 4, cursor: "pointer",
+          }}
+          onClick={() => useTimelineStore.getState().toggleFx()}
+        >
+          ✦ Open Effects Library
+        </button>
       </div>
 
       {/* Delete */}

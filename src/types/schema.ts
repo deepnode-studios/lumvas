@@ -64,7 +64,11 @@ export type ElementType =
   | "logo"
   | "group"
   | "icon"
-  | "chart";
+  | "chart"
+  | "counter"   // animated number counter
+  | "path"      // SVG path with draw-on animation
+  | "svg"       // inline SVG shape
+  | "indicator"; // pulsing emphasis ring
 
 /* ─── Chart data ─── */
 
@@ -140,6 +144,30 @@ export interface SlideElement {
   chartData?: ChartDataPoint[];
   showLabels?: boolean;   // show label text (default true)
   showValues?: boolean;   // show numeric values (default true)
+
+  // Counter specific (type "counter")
+  counterStart?: number;   // starting value (default 0)
+  counterEnd?: number;     // ending value (default 100)
+  counterPrefix?: string;  // text before number e.g. "$"
+  counterSuffix?: string;  // text after number e.g. "%"
+  counterDecimals?: number; // decimal places (default 0)
+
+  // Path specific (type "path") — content holds SVG path `d` string
+  pathStroke?: string;      // stroke color token or hex
+  pathStrokeWidth?: number; // stroke width px (default 2)
+  pathFill?: string;        // fill color token or hex (default "none")
+  pathLinecap?: "butt" | "round" | "square";
+
+  // SVG shape specific (type "svg") — content holds inline SVG markup
+  // uses existing color, width, height fields
+
+  // Indicator specific (type "indicator")
+  indicatorRadius?: number;  // ring radius px (default 40)
+  indicatorColor?: string;   // color token or hex
+
+  // Stagger / repeat for group type
+  staggerMs?: number;   // delay between each child's enter animation (ms)
+  repeatCount?: number; // render first child repeatCount times with stagger
 }
 
 /* ─── Slide ─── */
@@ -240,7 +268,8 @@ export type AnimationPreset =
   | "typewriter"
   | "blur-in" | "blur-out"
   | "wipe-left" | "wipe-right"
-  | "zoom-in" | "zoom-out";
+  | "zoom-in" | "zoom-out"
+  | "glitch";  // RGB-split glitch distortion (Canvas2D post-process)
 
 export interface AnimationConfig {
   preset: AnimationPreset;
@@ -260,6 +289,9 @@ export interface KeyframeProperties {
   rotation?: number; // degrees
   opacity?: number;  // 0–1
   blur?: number;     // px
+  color?: string;           // interpolated text/stroke color (hex)
+  backgroundColor?: string; // interpolated background color (hex)
+  drawProgress?: number;    // 0–1: fraction of path/stroke drawn (for "path" elements)
 }
 
 export interface Keyframe {
@@ -269,6 +301,74 @@ export interface Keyframe {
   easing?: Easing;
 }
 
+/* ─── Effects system ─── */
+
+export type EffectTrigger = "enter" | "exit" | "lifetime";
+
+export type EffectParamType = "number" | "color" | "select" | "boolean" | "keyframes";
+
+export interface EffectParamOption {
+  value: string;
+  label: string;
+}
+
+export interface EffectParamDef {
+  key: string;
+  label: string;
+  type: EffectParamType;
+  min?: number;
+  max?: number;
+  step?: number;
+  options?: EffectParamOption[];
+  default: EffectParamValue;
+}
+
+export type EffectParamValue = number | string | boolean | Keyframe[];
+
+export interface Effect {
+  id: string;
+  definitionId: string;
+  trigger: EffectTrigger;
+  durationMs?: number;       // for enter/exit effects
+  delayMs?: number;
+  startProgress?: number;    // 0–1 for lifetime effects
+  endProgress?: number;      // 0–1
+  easing?: Easing;
+  enabled: boolean;
+  params: Record<string, EffectParamValue>;
+}
+
+export interface EffectDefinition {
+  id: string;
+  label: string;
+  category: EffectCategory;
+  icon: string;
+  description: string;
+  defaultTrigger: EffectTrigger;
+  defaultDurationMs?: number;
+  params: EffectParamDef[];
+  /** Canvas post-process type (glitch, chromatic, etc.) */
+  postProcess?: "glitch" | "chromatic" | "blur-pulse";
+}
+
+export type EffectCategory =
+  | "intro"
+  | "outro"
+  | "motion"
+  | "filter"
+  | "color"
+  | "text"
+  | "draw"
+  | "keyframes";
+
+export interface EffectCombo {
+  id: string;
+  label: string;
+  icon: string;
+  description: string;
+  effects: Omit<Effect, "id">[];
+}
+
 /* Element timing */
 
 export interface ElementTiming {
@@ -276,8 +376,13 @@ export interface ElementTiming {
   enterMs: TimeMs;
   /** When this element disappears. Omit = stays until scene end. */
   exitMs?: TimeMs;
+  /** Unified effects array — the single source of truth for all animations */
+  effects?: Effect[];
+  /** @deprecated Use effects[] instead */
   enterAnimation?: AnimationConfig;
+  /** @deprecated Use effects[] instead */
   exitAnimation?: AnimationConfig;
+  /** @deprecated Use effects[] with custom-keyframes instead */
   keyframes?: Keyframe[];
 }
 

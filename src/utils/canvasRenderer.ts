@@ -14,7 +14,8 @@ import type {
   FlexJustify,
   FlexDirection,
 } from "@/types/schema";
-import { computeElementStyle } from "@/utils/animation";
+import { computeElementStyle, type ComputedElementStyle } from "@/utils/animation";
+import { computeEffects } from "@/utils/effectsRenderer";
 
 /* ─── Image cache ─── */
 
@@ -29,6 +30,38 @@ export function preloadImage(src: string): Promise<HTMLImageElement> {
     img.onerror = () => reject(new Error(`Failed to load: ${src}`));
     img.src = src;
   });
+}
+
+/* ─── SVG → data URL helper ─── */
+
+export function svgMarkupToDataUrl(markup: string): string {
+  // Ensure the markup has an SVG root — if not, wrap it
+  const trimmed = markup.trim();
+  const wrapped = trimmed.startsWith("<svg") ? trimmed : `<svg xmlns="http://www.w3.org/2000/svg">${trimmed}</svg>`;
+  return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(wrapped);
+}
+
+/* ─── Path length cache ─── */
+
+const pathLengthCache = new Map<string, number>();
+
+function getPathLength(d: string): number {
+  if (pathLengthCache.has(d)) return pathLengthCache.get(d)!;
+  try {
+    const svgNS = "http://www.w3.org/2000/svg";
+    const svgEl = document.createElementNS(svgNS, "svg") as SVGSVGElement;
+    const pathEl = document.createElementNS(svgNS, "path") as SVGPathElement;
+    pathEl.setAttribute("d", d);
+    svgEl.appendChild(pathEl);
+    svgEl.style.cssText = "position:absolute;visibility:hidden;pointer-events:none";
+    document.body.appendChild(svgEl);
+    const len = pathEl.getTotalLength();
+    document.body.removeChild(svgEl);
+    pathLengthCache.set(d, len);
+    return len;
+  } catch {
+    return 1000; // safe fallback
+  }
 }
 
 /** Pre-load all images/logos referenced in a scene */
@@ -46,6 +79,9 @@ export async function preloadSceneAssets(
     if (el.type === "logo") {
       const asset = el.assetId ? assets.find((a) => a.id === el.assetId) : assets[0];
       if (asset?.data) srcs.add(resolveMediaSrcLocal(asset.data, projectDir));
+    }
+    if (el.type === "svg" && el.content) {
+      srcs.add(svgMarkupToDataUrl(el.content));
     }
     if (el.children) el.children.forEach(collectFromElement);
   }
@@ -180,6 +216,20 @@ function estimateElementSize(
         totalH += childSizes.reduce((s, c) => s + c.h, 0) + Math.max(0, childSizes.length - 1) * gap;
       }
       return { w: parseSizeW(el.width, totalW), h: totalH };
+    }
+    case "counter": {
+      const fs = el.fontSize ?? theme.fontSize;
+      ctx.font = `${el.fontWeight ?? theme.fontWeight} ${fs}px ${theme.fontFamily}`;
+      const sample = (el.counterPrefix ?? "") + String(Math.max(Math.abs(el.counterStart ?? 0), Math.abs(el.counterEnd ?? 100))) + (el.counterSuffix ?? "");
+      return { w: Math.min(w, ctx.measureText(sample).width + 8), h: fs * 1.4 };
+    }
+    case "path":
+      return { w, h: parseSizeH(el.sceneHeight ?? el.height, 100) };
+    case "svg":
+      return { w, h: parseSizeH(el.sceneHeight ?? el.height, w) };
+    case "indicator": {
+      const r = (el.indicatorRadius ?? 40) * 2 + 8;
+      return { w: r, h: r };
     }
     default:
       return { w, h: 24 };
@@ -398,8 +448,11 @@ function drawElement(
   scene: VideoScene,
   assets: AssetItem[],
   projectDir: string | null | undefined,
+  anim?: ComputedElementStyle,
+  sceneTimeMs?: number,
 ) {
-  const color = resolveColor(el.color, theme, scene) || theme.primaryColor;
+  const color = anim?.color ?? resolveColor(el.color, theme, scene) ?? theme.primaryColor;
+  const bgColor = anim?.backgroundColor ?? resolveColor(el.backgroundColor, theme, scene);
 
   switch (el.type) {
     case "text":
@@ -467,7 +520,22 @@ function drawElement(
       const dir = el.direction ?? "row";
       const gap = el.gap ?? 12;
       const pad = el.padding ?? 0;
-      const children = el.children ?? [];
+      const children = (el.repeatCount && el.repeatCount > 1 && el.children?.[0])
+        ? Array.from({ length: el.repeatCount }, () => el.children![0])
+        : (el.children ?? []);
+
+      // Draw group background if present
+      if (bgColor) {
+        ctx.save();
+        if (el.backgroundGradient) {
+          // Basic linear gradient fallback — draw solid bg
+        }
+        roundRect(ctx, box.x, box.y, box.w, box.h, el.borderRadius ?? 0);
+        ctx.fillStyle = bgColor;
+        ctx.globalAlpha *= el.opacity ?? 1;
+        ctx.fill();
+        ctx.restore();
+      }
 
       const childSizes = children.map((c) =>
         estimateElementSize(ctx, c, box.w - pad * 2, box.h - pad * 2, theme, assets, projectDir),
@@ -478,10 +546,120 @@ function drawElement(
 
       for (let i = 0; i < children.length; i++) {
         const cs = childSizes[i];
-        drawElement(ctx, children[i], { x: cx, y: cy, w: cs.w, h: cs.h }, theme, scene, assets, projectDir);
+        const staggeredChild = (el.staggerMs && el.staggerMs > 0)
+          ? { ...children[i], timing: { ...children[i].timing, enterMs: children[i].timing.enterMs + i * el.staggerMs } }
+          : children[i];
+        drawElement(ctx, staggeredChild, { x: cx, y: cy, w: cs.w, h: cs.h }, theme, scene, assets, projectDir, undefined, sceneTimeMs);
         if (dir === "row") cx += cs.w + gap;
         else cy += cs.h + gap;
       }
+      break;
+    }
+
+    case "counter": {
+      const start = el.counterStart ?? 0;
+      const end = el.counterEnd ?? 100;
+      // Use drawProgress from keyframes if set, else derive from element lifetime
+      let progress: number;
+      if (anim?.drawProgress !== undefined) {
+        progress = anim.drawProgress;
+      } else if (sceneTimeMs !== undefined) {
+        const enterMs = el.timing.enterMs;
+        const exitMs = el.timing.exitMs ?? scene.durationMs;
+        progress = Math.max(0, Math.min(1, (sceneTimeMs - enterMs) / Math.max(1, exitMs - enterMs)));
+      } else {
+        progress = 0;
+      }
+      const value = start + (end - start) * progress;
+      const decimals = el.counterDecimals ?? 0;
+      const displayText = (el.counterPrefix ?? "") + value.toFixed(decimals) + (el.counterSuffix ?? "");
+      drawText(ctx, displayText, box, {
+        color,
+        fontSize: el.fontSize ?? theme.fontSize,
+        fontWeight: el.fontWeight ?? theme.fontWeight,
+        fontFamily: theme.fontFamily,
+        textAlign: (el.textAlign as CanvasTextAlign) ?? "center",
+        lineHeight: el.lineHeight,
+        opacity: el.opacity,
+        letterSpacing: el.letterSpacing,
+      });
+      break;
+    }
+
+    case "path": {
+      const d = el.content;
+      if (!d) break;
+      const strokeColor = resolveColor(el.pathStroke ?? el.color, theme, scene) ?? color;
+      const fillColor = el.pathFill ? resolveColor(el.pathFill, theme, scene) : "none";
+      const sw = el.pathStrokeWidth ?? 2;
+      const linecap = el.pathLinecap ?? "round";
+
+      // drawProgress: 0 = nothing drawn, 1 = fully drawn
+      const dp = anim?.drawProgress ?? 1;
+      const totalLen = dp < 1 ? getPathLength(d) : 0;
+
+      ctx.save();
+      ctx.translate(box.x, box.y);
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = sw;
+      ctx.lineCap = linecap;
+
+      if (fillColor !== "none") {
+        ctx.fillStyle = fillColor;
+      }
+
+      if (dp < 1 && totalLen > 0) {
+        const drawn = totalLen * dp;
+        ctx.setLineDash([drawn, totalLen]);
+        ctx.lineDashOffset = 0;
+      }
+
+      const path = new Path2D(d);
+      ctx.stroke(path);
+      if (fillColor !== "none") ctx.fill(path);
+
+      ctx.setLineDash([]);
+      ctx.restore();
+      break;
+    }
+
+    case "svg": {
+      const markup = el.content;
+      if (!markup) break;
+      const dataUrl = svgMarkupToDataUrl(markup);
+      const img = imageCache.get(dataUrl);
+      if (img) {
+        ctx.save();
+        if (el.opacity !== undefined && el.opacity < 1) ctx.globalAlpha *= el.opacity;
+        ctx.drawImage(img, box.x, box.y, box.w, box.h);
+        ctx.restore();
+      } else {
+        // Trigger async load for next frame
+        preloadImage(dataUrl).catch(() => {});
+      }
+      break;
+    }
+
+    case "indicator": {
+      const r = el.indicatorRadius ?? 40;
+      const sw = el.pathStrokeWidth ?? 3;
+      const ic = resolveColor(el.indicatorColor ?? el.color, theme, scene) ?? color;
+      // Pulse: use drawProgress as pulse phase (0→1 scale pulse)
+      const pulse = anim?.drawProgress !== undefined ? anim.drawProgress : 1;
+      const pulseScale = 1 + pulse * 0.3;
+      const cx = box.x + box.w / 2;
+      const cy = box.y + box.h / 2;
+
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.scale(pulseScale, pulseScale);
+      ctx.strokeStyle = ic;
+      ctx.lineWidth = sw;
+      ctx.globalAlpha *= (1 - pulse * 0.5); // fade out as it expands
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
       break;
     }
 
@@ -495,6 +673,53 @@ function drawElement(
         });
       }
   }
+}
+
+/* ─── Glitch post-process ─── */
+
+function applyGlitchEffect(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  seed: number,
+) {
+  const imageData = ctx.getImageData(0, 0, w, h);
+  const data = imageData.data;
+  const rng = (s: number) => (Math.sin(s) * 43758.5453) % 1;
+
+  // Horizontal row displacement
+  const numSlices = 8 + Math.floor(Math.abs(rng(seed * 0.01)) * 12);
+  for (let s = 0; s < numSlices; s++) {
+    const y = Math.floor(Math.abs(rng(seed + s * 7.3)) * h);
+    const sliceH = 1 + Math.floor(Math.abs(rng(seed + s * 3.1)) * 6);
+    const shift = Math.floor((rng(seed + s * 1.7) * 2 - 1) * 30);
+    if (shift === 0) continue;
+    for (let row = y; row < Math.min(y + sliceH, h); row++) {
+      const rowStart = row * w * 4;
+      const rowData = data.slice(rowStart, rowStart + w * 4);
+      const shifted = new Uint8ClampedArray(w * 4);
+      for (let x = 0; x < w; x++) {
+        const src = ((x - shift + w) % w) * 4;
+        shifted[x * 4] = rowData[src];
+        shifted[x * 4 + 1] = rowData[src + 1];
+        shifted[x * 4 + 2] = rowData[src + 2];
+        shifted[x * 4 + 3] = rowData[src + 3];
+      }
+      data.set(shifted, rowStart);
+    }
+  }
+
+  // RGB channel split (chromatic aberration)
+  const splitAmt = 4 + Math.floor(Math.abs(rng(seed * 0.7)) * 8);
+  const copy = data.slice();
+  for (let i = 0; i < w * h; i++) {
+    const srcR = Math.min(i + splitAmt, w * h - 1);
+    const srcB = Math.max(i - splitAmt, 0);
+    data[i * 4] = copy[srcR * 4];       // red channel: shift right
+    data[i * 4 + 2] = copy[srcB * 4 + 2]; // blue channel: shift left
+  }
+
+  ctx.putImageData(imageData, 0, 0);
 }
 
 /* ─── Main render function ─── */
@@ -531,11 +756,15 @@ export function renderSceneToCanvas(
   const alignItems: FlexAlign = scene.alignItems ?? "center";
   const justifyContent: FlexJustify = scene.justifyContent ?? "center";
 
+  let hasGlitch = false;
+
   // Measure visible elements
   const visibleElements: { el: SceneElement; size: { w: number; h: number }; anim: ReturnType<typeof computeElementStyle> }[] = [];
 
   for (const el of scene.elements) {
-    const anim = computeElementStyle(el, sceneTimeMs, scene.durationMs);
+    const anim = (el.timing.effects && el.timing.effects.length > 0)
+      ? computeEffects(el, sceneTimeMs, scene.durationMs)
+      : computeElementStyle(el, sceneTimeMs, scene.durationMs);
     if (!anim.visible) continue;
     const sz = estimateElementSize(ctx, el, w - padding * 2, h - padding * 2, theme, assets, projectDir);
     visibleElements.push({ el, size: sz, anim });
@@ -632,14 +861,20 @@ export function renderSceneToCanvas(
       ctx.filter = `blur(${blurMatch[1]}px)`;
     }
 
-    drawElement(ctx, el, box, theme, scene, assets, projectDir);
+    drawElement(ctx, el, box, theme, scene, assets, projectDir, anim, sceneTimeMs);
 
     ctx.restore();
 
+    if (anim.glitch) hasGlitch = true;
     cursor += (isRow ? sz.w : sz.h) + mainGap;
   }
 
   ctx.restore();
+
+  // Glitch post-process: RGB split + horizontal row displacement
+  if (hasGlitch) {
+    applyGlitchEffect(ctx, w, h, sceneTimeMs);
+  }
 }
 
 /* ─── Caption renderer ─── */

@@ -285,6 +285,53 @@
   user-select: none;
 }
 
+/* Scene tabs */
+.sceneTabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 12px;
+  background: #1a1a1e;
+  border-bottom: 1px solid #2a2a2e;
+  flex-shrink: 0;
+  overflow-x: auto;
+}
+
+.sceneTab {
+  font-size: 11px;
+  font-weight: 600;
+  color: #666;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 3px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+
+.sceneTab:hover {
+  color: #aaa;
+  background: #26262a;
+}
+
+.sceneTabActive {
+  color: #a78bfa;
+  background: #a78bfa15;
+  border-color: #a78bfa55;
+}
+
+.isolationBadge {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 600;
+  color: #a78bfa;
+  background: #a78bfa15;
+  padding: 2px 10px;
+  border-radius: 4px;
+  letter-spacing: 0.4px;
+}
+
 /* Timeline toolbar */
 .timelineToolbar {
   display: flex;

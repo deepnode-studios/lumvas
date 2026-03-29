@@ -59,6 +59,9 @@ interface AnimState {
   rotation: number;
   opacity: number;
   blur: number;
+  color?: string;
+  backgroundColor?: string;
+  drawProgress?: number;
 }
 
 const IDENTITY: AnimState = { x: 0, y: 0, scale: 1, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1, blur: 0 };
@@ -82,6 +85,7 @@ function presetStartState(preset: AnimationPreset): AnimState {
     case "wipe-left": return { ...IDENTITY, x: -100, opacity: 0 };
     case "wipe-right": return { ...IDENTITY, x: 100, opacity: 0 };
     case "typewriter": return { ...IDENTITY, opacity: 0 };
+    case "glitch": return IDENTITY; // post-process effect — no transform offset
     default: return IDENTITY;
   }
 }
@@ -96,6 +100,13 @@ function lerpState(from: AnimState, to: AnimState, t: number): AnimState {
     rotation: from.rotation + (to.rotation - from.rotation) * t,
     opacity: from.opacity + (to.opacity - from.opacity) * t,
     blur: from.blur + (to.blur - from.blur) * t,
+    color: from.color && to.color ? lerpColor(from.color, to.color, t) : (to.color ?? from.color),
+    backgroundColor: from.backgroundColor && to.backgroundColor
+      ? lerpColor(from.backgroundColor, to.backgroundColor, t)
+      : (to.backgroundColor ?? from.backgroundColor),
+    drawProgress: from.drawProgress !== undefined || to.drawProgress !== undefined
+      ? ((from.drawProgress ?? 0) + ((to.drawProgress ?? 1) - (from.drawProgress ?? 0)) * t)
+      : undefined,
   };
 }
 
@@ -126,6 +137,7 @@ function keyframeToState(p: KeyframeProperties): Partial<AnimState> {
     x: p.x, y: p.y,
     scale: p.scale, scaleX: p.scaleX, scaleY: p.scaleY,
     rotation: p.rotation, opacity: p.opacity, blur: p.blur,
+    color: p.color, backgroundColor: p.backgroundColor, drawProgress: p.drawProgress,
   };
 }
 
@@ -139,7 +151,27 @@ function lerpKeyframeProperties(a: KeyframeProperties, b: KeyframeProperties, t:
   if (a.rotation !== undefined || b.rotation !== undefined) result.rotation = (a.rotation ?? 0) + ((b.rotation ?? 0) - (a.rotation ?? 0)) * t;
   if (a.opacity !== undefined || b.opacity !== undefined) result.opacity = (a.opacity ?? 1) + ((b.opacity ?? 1) - (a.opacity ?? 1)) * t;
   if (a.blur !== undefined || b.blur !== undefined) result.blur = (a.blur ?? 0) + ((b.blur ?? 0) - (a.blur ?? 0)) * t;
+  if (a.color !== undefined || b.color !== undefined) result.color = lerpColor(a.color ?? b.color!, b.color ?? a.color!, t);
+  if (a.backgroundColor !== undefined || b.backgroundColor !== undefined) result.backgroundColor = lerpColor(a.backgroundColor ?? b.backgroundColor!, b.backgroundColor ?? a.backgroundColor!, t);
+  if (a.drawProgress !== undefined || b.drawProgress !== undefined) result.drawProgress = (a.drawProgress ?? 0) + ((b.drawProgress ?? 1) - (a.drawProgress ?? 0)) * t;
   return result;
+}
+
+/* ─── Color interpolation ─── */
+
+function hexToRgb(hex: string): [number, number, number] | null {
+  const m = hex.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+  if (!m) return null;
+  return [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)];
+}
+
+export function lerpColor(a: string, b: string, t: number): string {
+  const ra = hexToRgb(a), rb = hexToRgb(b);
+  if (!ra || !rb) return t < 0.5 ? a : b;
+  const r = Math.round(ra[0] + (rb[0] - ra[0]) * t);
+  const g = Math.round(ra[1] + (rb[1] - ra[1]) * t);
+  const bl = Math.round(ra[2] + (rb[2] - ra[2]) * t);
+  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${bl.toString(16).padStart(2, "0")}`;
 }
 
 /* ─── Main compute function ─── */
@@ -149,6 +181,14 @@ export interface ComputedElementStyle {
   opacity: number;
   filter: string;
   visible: boolean;
+  /** Interpolated text/stroke color from keyframes (undefined = use element's own color) */
+  color?: string;
+  /** Interpolated background color from keyframes */
+  backgroundColor?: string;
+  /** Draw progress 0–1 for path/stroke-draw animation */
+  drawProgress?: number;
+  /** True when the enter animation is a glitch preset */
+  glitch?: boolean;
 }
 
 /**
@@ -211,7 +251,15 @@ export function computeElementStyle(
     if (kfState.rotation !== undefined) state.rotation = kfState.rotation;
     if (kfState.opacity !== undefined) state.opacity = kfState.opacity;
     if (kfState.blur !== undefined) state.blur = kfState.blur;
+    if (kfState.color !== undefined) state.color = kfState.color;
+    if (kfState.backgroundColor !== undefined) state.backgroundColor = kfState.backgroundColor;
+    if (kfState.drawProgress !== undefined) state.drawProgress = kfState.drawProgress;
   }
+
+  // Detect glitch preset (signals canvas renderer to apply post-process)
+  const isGlitch =
+    (timing.enterAnimation?.preset === "glitch" && sceneTimeMs < enterMs + (timing.enterAnimation.durationMs ?? 600)) ||
+    (timing.exitAnimation?.preset === "glitch" && sceneTimeMs >= exitMs - (timing.exitAnimation.durationMs ?? 600));
 
   // Build CSS
   const transforms: string[] = [];
@@ -228,5 +276,9 @@ export function computeElementStyle(
     opacity: state.opacity,
     filter: filters.join(" "),
     visible: true,
+    color: state.color,
+    backgroundColor: state.backgroundColor,
+    drawProgress: state.drawProgress,
+    glitch: isGlitch || undefined,
   };
 }

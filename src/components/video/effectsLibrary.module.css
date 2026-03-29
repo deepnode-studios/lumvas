@@ -1,0 +1,590 @@
+/* ─── FX Drawer ─── */
+
+.drawer {
+  display: flex;
+  flex-direction: column;
+  background: #1d1d1f;
+  border-top: 2px solid #3a3a3e;
+  height: 220px;
+  min-height: 140px;
+  max-height: 400px;
+  resize: vertical;
+  overflow: hidden;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.drawerHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px;
+  height: 34px;
+  background: #222226;
+  border-bottom: 1px solid #2a2a2e;
+  flex-shrink: 0;
+}
+
+.drawerTitle {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  color: #a78bfa;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.drawerSubtitle {
+  font-size: 12px;
+  color: #aaa;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drawerSubtitle strong {
+  color: #e0e0e0;
+}
+
+.closeBtn {
+  background: none;
+  border: none;
+  color: #666;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.closeBtn:hover {
+  color: #e0e0e0;
+}
+
+.drawerBody {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ─── Catalog ─── */
+
+.catalog {
+  display: flex;
+  flex-direction: column;
+  width: 380px;
+  flex-shrink: 0;
+  border-right: 1px solid #2a2a2e;
+  overflow: hidden;
+}
+
+.categoryTabs {
+  display: flex;
+  gap: 0;
+  padding: 6px 8px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.categoryTab {
+  background: none;
+  border: 1px solid #333;
+  color: #888;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.categoryTab:hover {
+  border-color: #555;
+  color: #ccc;
+}
+
+.categoryTabActive {
+  background: #a78bfa22;
+  border-color: #a78bfa;
+  color: #a78bfa;
+}
+
+.effectGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 8px;
+  overflow-y: auto;
+  align-content: flex-start;
+}
+
+.effectCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 72px;
+  height: 62px;
+  background: #28282c;
+  border: 1px solid #333;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  padding: 0;
+}
+
+.effectCard:hover {
+  background: #a78bfa22;
+  border-color: #a78bfa;
+  transform: translateY(-1px);
+}
+
+.effectCardIcon {
+  font-size: 18px;
+  line-height: 1;
+  color: #a78bfa;
+}
+
+.effectCardLabel {
+  font-size: 10px;
+  color: #ccc;
+  text-align: center;
+  line-height: 1.2;
+  padding: 0 4px;
+}
+
+/* ─── Divider ─── */
+
+.divider {
+  width: 0;
+  border-left: 1px solid #2a2a2e;
+}
+
+/* ─── Applied effects ─── */
+
+.applied {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.appliedHeader {
+  padding: 8px 12px 4px;
+  flex-shrink: 0;
+}
+
+.sectionLabel {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  color: #666;
+  text-transform: uppercase;
+}
+
+.emptyApplied {
+  padding: 16px 12px;
+  font-size: 12px;
+  color: #555;
+}
+
+.appliedList {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* ─── Applied effect row ─── */
+
+.appliedEffect {
+  background: #26262a;
+  border: 1px solid #333;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.appliedEffectHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  cursor: default;
+}
+
+.toggleEnabled {
+  background: none;
+  border: none;
+  color: #4ecdc4;
+  font-size: 12px;
+  cursor: pointer;
+  width: 16px;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.appliedEffectName {
+  font-size: 12px;
+  color: #ddd;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.appliedEffectCategory {
+  font-size: 10px;
+  color: #666;
+  background: #333;
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.appliedEffectExpand {
+  font-size: 10px;
+  color: #555;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.appliedEffectExpand:hover {
+  color: #aaa;
+}
+
+.removeEffectBtn {
+  background: none;
+  border: none;
+  color: #555;
+  font-size: 14px;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.removeEffectBtn:hover {
+  color: #ff453a;
+}
+
+.appliedEffectParams {
+  padding: 6px 8px 8px;
+  border-top: 1px solid #333;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* ─── Param editors ─── */
+
+.paramRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+}
+
+.paramLabel {
+  font-size: 11px;
+  color: #888;
+  width: 90px;
+  flex-shrink: 0;
+}
+
+.paramInput {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  font-size: 11px;
+  color: #e0e0e0;
+  background: #1a1a1e;
+  border: 1px solid #383840;
+  border-radius: 4px;
+  outline: none;
+  max-width: 90px;
+}
+
+.paramInput:focus {
+  border-color: #a78bfa;
+}
+
+.paramInput::placeholder {
+  color: #444;
+}
+
+.paramColor {
+  width: 36px;
+  height: 22px;
+  border: 1px solid #383840;
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+  padding: 2px;
+}
+
+.paramSelect {
+  flex: 1;
+  padding: 3px 6px;
+  font-size: 11px;
+  color: #e0e0e0;
+  background: #1a1a1e;
+  border: 1px solid #383840;
+  border-radius: 4px;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23666'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  padding-right: 20px;
+  cursor: pointer;
+  max-width: 140px;
+}
+
+.paramSelect:focus {
+  border-color: #a78bfa;
+}
+
+/* ─── Keyframe editor ─── */
+
+.keyframeEditor {
+  margin-top: 4px;
+  border: 1px solid #333;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.keyframeHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 8px;
+  background: #222226;
+}
+
+.addKfBtn {
+  background: #a78bfa22;
+  border: 1px solid #a78bfa;
+  color: #a78bfa;
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.addKfBtn:hover {
+  background: #a78bfa33;
+}
+
+.emptyKf {
+  padding: 10px 8px;
+  font-size: 11px;
+  color: #555;
+}
+
+.keyframeRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 6px 8px;
+  border-top: 1px solid #2a2a2e;
+}
+
+.kfProgress {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.kfProps {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.kfPropRow {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.kfPropLabel {
+  font-size: 10px;
+  color: #666;
+  flex-shrink: 0;
+}
+
+.kfColorGroup {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.kfClearBtn {
+  background: none;
+  border: none;
+  color: #555;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.kfClearBtn:hover {
+  color: #ff453a;
+}
+
+.removeKfBtn {
+  background: none;
+  border: none;
+  color: #555;
+  font-size: 14px;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0 2px;
+  line-height: 1;
+  align-self: flex-start;
+  margin-top: 2px;
+}
+
+.removeKfBtn:hover {
+  color: #ff453a;
+}
+
+/* ─── Drag handle ─── */
+
+.dragHandle {
+  color: #555;
+  font-size: 13px;
+  cursor: grab;
+  flex-shrink: 0;
+  line-height: 1;
+  user-select: none;
+}
+
+.dragHandle:hover {
+  color: #aaa;
+}
+
+/* ─── Catalog search ─── */
+
+.catalogSearch {
+  padding: 6px 8px 2px;
+  flex-shrink: 0;
+}
+
+.searchInput {
+  width: 100%;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: #e0e0e0;
+  background: #1a1a1e;
+  border: 1px solid #383840;
+  border-radius: 4px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.searchInput:focus {
+  border-color: #a78bfa;
+}
+
+.searchInput::placeholder {
+  color: #444;
+}
+
+/* ─── Effect card hover animations (per-category) ─── */
+
+.effectCard:hover .effectCardIcon {
+  display: inline-block;
+}
+
+/* intro: slide up */
+.effectCard[data-category="intro"]:hover .effectCardIcon {
+  animation: fxSlideUp 0.4s ease-out infinite alternate;
+}
+
+/* outro: slide down */
+.effectCard[data-category="outro"]:hover .effectCardIcon {
+  animation: fxSlideDown 0.4s ease-out infinite alternate;
+}
+
+/* motion / float */
+.effectCard[data-category="motion"]:hover .effectCardIcon {
+  animation: fxFloat 1s ease-in-out infinite alternate;
+}
+
+/* emphasis / shake */
+.effectCard[data-category="emphasis"]:hover .effectCardIcon {
+  animation: fxShake 0.2s linear infinite;
+}
+
+/* text */
+.effectCard[data-category="text"]:hover .effectCardIcon {
+  animation: fxPulse 0.6s ease-in-out infinite alternate;
+}
+
+/* color */
+.effectCard[data-category="color"]:hover .effectCardIcon {
+  animation: fxGlow 0.8s ease-in-out infinite alternate;
+}
+
+/* path / draw */
+.effectCard[data-category="path"]:hover .effectCardIcon {
+  animation: fxSpin 1.2s linear infinite;
+}
+
+/* transform */
+.effectCard[data-category="transform"]:hover .effectCardIcon {
+  animation: fxScale 0.5s ease-in-out infinite alternate;
+}
+
+@keyframes fxSlideUp {
+  from { transform: translateY(0); }
+  to   { transform: translateY(-5px); }
+}
+
+@keyframes fxSlideDown {
+  from { transform: translateY(0); }
+  to   { transform: translateY(5px); }
+}
+
+@keyframes fxFloat {
+  from { transform: translateY(-3px); }
+  to   { transform: translateY(3px); }
+}
+
+@keyframes fxShake {
+  0%   { transform: translateX(0); }
+  25%  { transform: translateX(-3px); }
+  75%  { transform: translateX(3px); }
+  100% { transform: translateX(0); }
+}
+
+@keyframes fxPulse {
+  from { opacity: 0.6; transform: scale(0.95); }
+  to   { opacity: 1;   transform: scale(1.05); }
+}
+
+@keyframes fxGlow {
+  from { filter: brightness(1); }
+  to   { filter: brightness(1.6) saturate(1.5); }
+}
+
+@keyframes fxSpin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes fxScale {
+  from { transform: scale(0.9); }
+  to   { transform: scale(1.15); }
+}

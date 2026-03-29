@@ -2,6 +2,7 @@ import { useLumvasStore, selectVideoContent } from "@/store/useLumvasStore";
 import { useExportStore } from "@/store/useExportStore";
 import { getLastDialogPath, setLastDialogPath, revealInFolder } from "./dialogPath";
 import { renderSceneToCanvas, renderCaptionsToCanvas, preloadSceneAssets } from "./canvasRenderer";
+import { applySceneTransition } from "./sceneTransition";
 import type { VideoScene } from "@/types/schema";
 
 /** Show the export settings dialog. */
@@ -127,6 +128,13 @@ export async function confirmExport() {
 
     const originalSize = store.documentSize; // unscaled
 
+    // Build scene start time map for transition lookup
+    const sceneStartTimes: number[] = [];
+    {
+      let t = 0;
+      for (const s of vc.scenes) { sceneStartTimes.push(t); t += s.durationMs; }
+    }
+
     for (let i = 0; i < totalFrames; i++) {
       if (!useExportStore.getState().isExporting) break;
 
@@ -134,11 +142,14 @@ export async function confirmExport() {
 
       // Find scene at this time
       let elapsed = 0;
+      let sceneIdx = -1;
       let scene: VideoScene | null = null;
       let sceneTimeMs = 0;
-      for (const s of vc.scenes) {
+      for (let si = 0; si < vc.scenes.length; si++) {
+        const s = vc.scenes[si];
         if (timeMs >= elapsed && timeMs < elapsed + s.durationMs) {
           scene = s;
+          sceneIdx = si;
           sceneTimeMs = timeMs - elapsed;
           break;
         }
@@ -146,12 +157,38 @@ export async function confirmExport() {
       }
       if (!scene && vc.scenes.length > 0) {
         scene = vc.scenes[vc.scenes.length - 1];
+        sceneIdx = vc.scenes.length - 1;
         sceneTimeMs = scene.durationMs;
       }
       if (!scene) continue;
 
       // Render directly to canvas — <5ms per frame
       renderSceneToCanvas(ctx, scene, theme, assets, originalSize, projectDir, sceneTimeMs);
+
+      // Scene transition: if within the transition window of the NEXT scene, composite
+      if (
+        sceneIdx >= 0 &&
+        sceneIdx < vc.scenes.length - 1 &&
+        scene.transition &&
+        scene.transition.preset !== "none"
+      ) {
+        const transMs = scene.transition.durationMs;
+        const sceneEnd = sceneStartTimes[sceneIdx] + scene.durationMs;
+        const transStart = sceneEnd - transMs;
+        if (timeMs >= transStart) {
+          const nextScene = vc.scenes[sceneIdx + 1];
+          const nextSceneTimeMs = timeMs - sceneEnd;
+          const progress = Math.min(1, (timeMs - transStart) / transMs);
+          // Render next scene onto a temp canvas, then composite
+          const tempCanvas = document.createElement("canvas");
+          tempCanvas.width = renderWidth;
+          tempCanvas.height = renderHeight;
+          const tempCtx = tempCanvas.getContext("2d")!;
+          if (exportScale !== 1) tempCtx.scale(exportScale, exportScale);
+          renderSceneToCanvas(tempCtx, nextScene, theme, assets, originalSize, projectDir, Math.max(0, nextSceneTimeMs));
+          applySceneTransition(ctx, tempCanvas, scene.transition, progress, renderWidth, renderHeight);
+        }
+      }
 
       // Draw captions on top
       if (vc.captionTracks.length > 0) {

@@ -1,10 +1,12 @@
 import { useRef, useState } from "react";
 import { useLumvasStore, selectVideoContent } from "@/store/useLumvasStore";
 import { useFileStore } from "@/store/useFileStore";
+import { useTimelineStore } from "@/store/useTimelineStore";
 import { writeMediaFromDataUri } from "@/utils/lumvasFile";
 import { resolveMediaSrc } from "@/utils/media";
 import type { AssetItem, AudioTrack, SceneElement, AudioTrackType } from "@/types/schema";
 import styles from "./mediaPool.module.css";
+import { SceneThumbnail } from "./SceneThumbnail";
 
 function uid(): string {
   return Math.random().toString(36).slice(2, 10);
@@ -19,7 +21,7 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-type Tab = "media" | "audio" | "text";
+type Tab = "media" | "audio" | "text" | "scenes";
 
 const AUDIO_TRACK_TYPES: { value: AudioTrackType; label: string; color: string }[] = [
   { value: "narration", label: "Narration", color: "#4ecdc4" },
@@ -133,13 +135,13 @@ export function MediaPool() {
     <div className={styles.pool}>
       {/* Tab bar */}
       <div className={styles.tabs}>
-        {(["media", "audio", "text"] as Tab[]).map((t) => (
+        {(["media", "audio", "text", "scenes"] as Tab[]).map((t) => (
           <button
             key={t}
             className={`${styles.tab} ${tab === t ? styles.tabActive : ""}`}
             onClick={() => setTab(t)}
           >
-            {t === "media" ? "Media" : t === "audio" ? "Audio" : "Text"}
+            {t === "media" ? "Media" : t === "audio" ? "Audio" : t === "text" ? "Text" : "Scenes"}
           </button>
         ))}
       </div>
@@ -283,7 +285,74 @@ export function MediaPool() {
             ))}
           </>
         )}
+
+        {/* SCENES TAB */}
+        {tab === "scenes" && (
+          <ScenesPanel />
+        )}
       </div>
     </div>
+  );
+}
+
+/* ---------- Scenes Panel ---------- */
+function ScenesPanel() {
+  const vc = useLumvasStore((s) => selectVideoContent(s));
+  const theme = useLumvasStore((s) => s.theme);
+  const assets = useLumvasStore((s) => s.assets.items);
+  const size = useLumvasStore((s) => s.documentSize);
+  const projectDir = useFileStore((s) => s.currentFilePath);
+  const editingSceneId = useTimelineStore((s) => s.editingSceneId);
+  const addScene = useLumvasStore((s) => s.addScene);
+
+  return (
+    <>
+      <button
+        className={styles.importBtn}
+        onClick={() => addScene()}
+      >
+        + New Scene
+      </button>
+      {vc.scenes.length === 0 ? (
+        <div className={styles.emptyHint}>No scenes yet.</div>
+      ) : (
+        <div className={styles.sceneGrid}>
+          {vc.scenes.map((sc, i) => (
+            <div
+              key={sc.id}
+              className={`${styles.sceneCard} ${editingSceneId === sc.id ? styles.sceneCardActive : ""}`}
+              onDoubleClick={() => useTimelineStore.getState().setEditingScene(sc.id)}
+              onClick={() => useTimelineStore.getState().setEditingScene(sc.id)}
+              title={`Double-click to edit Scene ${i + 1} in isolation`}
+            >
+              <div className={styles.sceneCardThumb}>
+                <SceneThumbnail
+                  scene={sc}
+                  theme={theme}
+                  assets={assets}
+                  size={size}
+                  projectDir={projectDir}
+                />
+              </div>
+              <div className={styles.sceneCardInfo}>
+                <span className={styles.sceneCardName}>Scene {i + 1}</span>
+                <span className={styles.sceneCardMeta}>
+                  {(sc.durationMs / 1000).toFixed(1)}s · {sc.elements.length} el
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {editingSceneId && (
+        <button
+          className={styles.importBtn}
+          style={{ marginTop: 8, background: "#a78bfa22", borderColor: "#a78bfa", color: "#a78bfa" }}
+          onClick={() => useTimelineStore.getState().setEditingScene(null)}
+        >
+          Back to Master
+        </button>
+      )}
+    </>
   );
 }

@@ -18,6 +18,9 @@ import { SceneRenderer } from "./SceneRenderer";
 import { MediaPool } from "./MediaPool";
 import { Inspector } from "./Inspector";
 import { PreviewOverlay } from "./preview/PreviewOverlay";
+import { EffectsLibrary } from "./EffectsLibrary";
+import { KeyboardShortcuts } from "./KeyboardShortcuts";
+import { SceneThumbnail } from "./SceneThumbnail";
 import styles from "./videoWorkspace.module.css";
 
 /* ---------- helpers ---------- */
@@ -217,17 +220,35 @@ function SceneBlockDraggable({
     [sceneId, durationMs, zoomLevel],
   );
 
+  const scene = useLumvasStore((s) => {
+    const vc = selectVideoContent(s);
+    return vc.scenes.find((sc) => sc.id === sceneId) ?? null;
+  });
+  const theme = useLumvasStore((s) => s.theme);
+  const assets = useLumvasStore((s) => s.assets.items);
+  const size = useLumvasStore((s) => s.documentSize);
+  const projectDir = useFileStore((s) => s.currentFilePath);
+
   return (
     <div
       className={`${styles.sceneBlock} ${isActive ? styles.sceneBlockActive : ""}`}
-      style={{ left, width: Math.max(width - 2, 4) }}
+      style={{ left, width: Math.max(width - 2, 4), position: "relative", overflow: "hidden" }}
       onMouseDown={(e) => {
         e.stopPropagation();
         onSeek(startMs);
         useTimelineStore.getState().setInspectorTarget({ type: "scene", sceneId });
       }}
     >
-      Scene {sceneIndex + 1}
+      {scene && (
+        <SceneThumbnail
+          scene={scene}
+          theme={theme}
+          assets={assets}
+          size={size}
+          projectDir={projectDir}
+        />
+      )}
+      <span style={{ position: "relative", zIndex: 1 }}>Scene {sceneIndex + 1}</span>
       <div className={styles.dragHandleRight} onMouseDown={handleRightEdge} />
     </div>
   );
@@ -445,17 +466,19 @@ function TimelineTracks({
   totalDuration,
   onSeek,
   projectDir,
+  editingSceneId,
 }: {
   zoomLevel: number;
   currentTimeMs: number;
   totalDuration: number;
   onSeek: (ms: number) => void;
   projectDir: string | null;
+  editingSceneId?: string | null;
 }) {
   const videoContent = useLumvasStore((s) => selectVideoContent(s));
   const addSceneElement = useLumvasStore((s) => s.addSceneElement);
   const inspectorTarget = useTimelineStore((s) => s.inspectorTarget);
-  const currentSceneId = getSceneAtTime(currentTimeMs);
+  const currentSceneId = editingSceneId ?? getSceneAtTime(currentTimeMs);
   const totalWidth = (totalDuration / 1000) * zoomLevel;
   const tracksRef = useRef<HTMLDivElement>(null);
   const onScrubDown = useScrubbing(tracksRef, zoomLevel, totalDuration, onSeek);
@@ -519,22 +542,41 @@ function TimelineTracks({
   // Video scenes — always first
   layers.push({ kind: "video" });
 
-  // Each element gets its own layer
-  for (const scene of videoContent.scenes) {
-    const sceneStartMs = getSceneStartMs(scene.id);
-    for (const el of scene.elements) {
-      layers.push({ kind: "element", el, sceneId: scene.id, sceneDurationMs: scene.durationMs, sceneStartMs });
+  if (editingSceneId) {
+    // Isolation mode: show only the editing scene's elements
+    const scene = videoContent.scenes.find((s) => s.id === editingSceneId);
+    if (scene) {
+      for (const el of scene.elements) {
+        layers.push({ kind: "element", el, sceneId: scene.id, sceneDurationMs: scene.durationMs, sceneStartMs: 0 });
+      }
     }
-  }
-
-  // Each audio track gets its own layer
-  for (const track of videoContent.audioTracks) {
-    layers.push({ kind: "audio", track });
-  }
-
-  // Each caption track gets its own layer
-  for (const track of videoContent.captionTracks) {
-    layers.push({ kind: "caption", track });
+    // Show audio tracks that overlap with this scene's time range
+    const absStart = getSceneStartMs(editingSceneId);
+    const absEnd = absStart + (scene?.durationMs ?? 0);
+    for (const track of videoContent.audioTracks) {
+      const tEnd = track.startMs + track.durationMs;
+      if (track.startMs < absEnd && tEnd > absStart) {
+        // Remap audio to scene-relative time
+        layers.push({
+          kind: "audio",
+          track: { ...track, startMs: track.startMs - absStart },
+        });
+      }
+    }
+  } else {
+    // Master mode: show everything
+    for (const scene of videoContent.scenes) {
+      const sceneStartMs = getSceneStartMs(scene.id);
+      for (const el of scene.elements) {
+        layers.push({ kind: "element", el, sceneId: scene.id, sceneDurationMs: scene.durationMs, sceneStartMs });
+      }
+    }
+    for (const track of videoContent.audioTracks) {
+      layers.push({ kind: "audio", track });
+    }
+    for (const track of videoContent.captionTracks) {
+      layers.push({ kind: "caption", track });
+    }
   }
 
   return (
@@ -588,16 +630,19 @@ function TimelineTracks({
         >
           {layers.map((layer) => {
             switch (layer.kind) {
-              case "video":
+              case "video": {
+                const scenesToShow = editingSceneId
+                  ? videoContent.scenes.filter((s) => s.id === editingSceneId)
+                  : videoContent.scenes;
                 return (
                   <div key="video" className={styles.trackRow}>
-                    {videoContent.scenes.map((scene, idx) => (
+                    {scenesToShow.map((scene, idx) => (
                       <SceneBlockDraggable
                         key={scene.id}
                         sceneId={scene.id}
-                        sceneIndex={idx}
+                        sceneIndex={editingSceneId ? videoContent.scenes.findIndex((s) => s.id === scene.id) : idx}
                         durationMs={scene.durationMs}
-                        startMs={getSceneStartMs(scene.id)}
+                        startMs={editingSceneId ? 0 : getSceneStartMs(scene.id)}
                         isActive={inspectorTarget?.type === "scene" && inspectorTarget.sceneId === scene.id}
                         zoomLevel={zoomLevel}
                         onSeek={onSeek}
@@ -605,6 +650,7 @@ function TimelineTracks({
                     ))}
                   </div>
                 );
+              }
 
               case "element":
                 return (
@@ -820,10 +866,18 @@ export function VideoWorkspace() {
   const snapEnabled = useTimelineStore((s) => s.snapEnabled);
   const seekTo = useTimelineStore((s) => s.seekTo);
 
-  const totalDuration = getTotalDurationMs();
-  const currentSceneId = getSceneAtTime(currentTimeMs);
-  const currentScene = videoContent.scenes.find((s) => s.id === currentSceneId);
-  const sceneTime = currentSceneId ? currentTimeMs - getSceneStartMs(currentSceneId) : 0;
+  const editingSceneId = useTimelineStore((s) => s.editingSceneId);
+  const editingScene = editingSceneId ? videoContent.scenes.find((s) => s.id === editingSceneId) ?? null : null;
+
+  // In isolation mode, duration and scene are scoped to the single scene
+  const totalDuration = editingScene ? editingScene.durationMs : getTotalDurationMs();
+  const currentSceneId = editingSceneId ?? getSceneAtTime(currentTimeMs);
+  const currentScene = editingSceneId
+    ? editingScene
+    : videoContent.scenes.find((s) => s.id === currentSceneId);
+  const sceneTime = editingSceneId
+    ? currentTimeMs // in isolation mode, time IS scene-relative
+    : (currentSceneId ? currentTimeMs - getSceneStartMs(currentSceneId) : 0);
 
   // Playback loop
   useEffect(() => {
@@ -862,6 +916,58 @@ export function VideoWorkspace() {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
 
+      const ctrl = e.ctrlKey || e.metaKey;
+
+      // Copy/paste/duplicate
+      if (ctrl && e.code === "KeyC") {
+        e.preventDefault();
+        const { activeElementId, activeSceneId } = useLumvasStore.getState();
+        const vc = selectVideoContent(useLumvasStore.getState());
+        const scene = vc.scenes.find((s) => s.id === activeSceneId);
+        if (activeElementId && scene) {
+          const el = scene.elements.find((el) => el.id === activeElementId);
+          if (el) clipboardRef.current = { type: "element", sceneId: scene.id, element: JSON.parse(JSON.stringify(el)) };
+        } else if (scene) {
+          clipboardRef.current = { type: "scene", scene: JSON.parse(JSON.stringify(scene)) };
+        }
+        return;
+      }
+      if (ctrl && e.code === "KeyV") {
+        e.preventDefault();
+        const cb = clipboardRef.current;
+        if (!cb) return;
+        if (cb.type === "element") {
+          const targetSceneId = cb.sceneId;
+          const newEl = { ...JSON.parse(JSON.stringify(cb.element)), id: Math.random().toString(36).slice(2, 10) };
+          newEl.timing = { ...newEl.timing, enterMs: (newEl.timing.enterMs ?? 0) + 200 };
+          useLumvasStore.getState().addSceneElement(targetSceneId, newEl);
+        } else {
+          const newScene = { ...JSON.parse(JSON.stringify(cb.scene)), id: Math.random().toString(36).slice(2, 10) };
+          newScene.elements = newScene.elements.map((el: import("@/types/schema").SceneElement) => ({ ...el, id: Math.random().toString(36).slice(2, 10) }));
+          useLumvasStore.getState().addScene(newScene);
+        }
+        return;
+      }
+      if (ctrl && e.code === "KeyD") {
+        e.preventDefault();
+        const { activeElementId, activeSceneId } = useLumvasStore.getState();
+        const vc = selectVideoContent(useLumvasStore.getState());
+        const scene = vc.scenes.find((s) => s.id === activeSceneId);
+        if (activeElementId && scene) {
+          const el = scene.elements.find((el) => el.id === activeElementId);
+          if (el) {
+            const newEl = { ...JSON.parse(JSON.stringify(el)), id: Math.random().toString(36).slice(2, 10) };
+            newEl.timing = { ...newEl.timing, enterMs: (newEl.timing.enterMs ?? 0) + 200 };
+            useLumvasStore.getState().addSceneElement(scene.id, newEl);
+          }
+        } else if (scene) {
+          const newScene = { ...JSON.parse(JSON.stringify(scene)), id: Math.random().toString(36).slice(2, 10) };
+          newScene.elements = newScene.elements.map((el: import("@/types/schema").SceneElement) => ({ ...el, id: Math.random().toString(36).slice(2, 10) }));
+          useLumvasStore.getState().addScene(newScene);
+        }
+        return;
+      }
+
       switch (e.code) {
         case "Space":
           e.preventDefault();
@@ -894,6 +1000,12 @@ export function VideoWorkspace() {
           if (isPlaying) useTimelineStore.getState().pause();
           else useTimelineStore.getState().play();
           break;
+        case "Slash":
+          if (e.shiftKey) {
+            e.preventDefault();
+            setShowShortcuts((x) => !x);
+          }
+          break;
       }
     };
     window.addEventListener("keydown", handler);
@@ -902,9 +1014,13 @@ export function VideoWorkspace() {
 
   // Preview scale: auto-fit or manual
   const centerRef = useRef<HTMLDivElement>(null);
+  const clipboardRef = useRef<{ type: "element"; sceneId: string; element: import("@/types/schema").SceneElement } | { type: "scene"; scene: import("@/types/schema").VideoScene } | null>(null);
   const [previewScaleMode, setPreviewScaleMode] = useState<"fit" | "manual">("fit");
   const [manualScale, setManualScale] = useState(0.4);
   const [fitScale, setFitScale] = useState(0.4);
+  const [renderQuality, setRenderQuality] = useState<1 | 2>(1);
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const fxOpen = useTimelineStore((s) => s.fxOpen);
 
   // Compute fit scale based on available space
   useEffect(() => {
@@ -1017,16 +1133,29 @@ export function VideoWorkspace() {
                   style={{
                     transform: `scale(${previewScale})`,
                     transformOrigin: "top left",
+                    imageRendering: renderQuality === 2 ? "auto" : undefined,
                   }}
                 >
                   <SceneRenderer
                     scene={currentScene}
                     theme={theme}
                     assets={assets}
-                    size={size}
+                    size={renderQuality === 2 ? { ...size, width: size.width * 2, height: size.height * 2 } : size}
                     language={language}
                     projectDir={projectDir}
                     currentTimeMs={sceneTime}
+                    activeElementId={useLumvasStore.getState().activeElementId}
+                    onElementClick={(id) => useLumvasStore.getState().setActiveElement(id)}
+                    previewScale={previewScale}
+                    onElementDragMove={(id, dx, dy) => {
+                      const el = currentScene.elements.find((e) => e.id === id);
+                      if (!el) return;
+                      useLumvasStore.getState().updateSceneElement(currentScene.id, id, {
+                        x: (el.x ?? 0) + dx,
+                        y: (el.y ?? 0) + dy,
+                      });
+                    }}
+                    style={renderQuality === 2 ? { transform: "scale(0.5)", transformOrigin: "top left" } : undefined}
                   />
                   <PreviewOverlay
                     captionTracks={videoContent.captionTracks}
@@ -1120,6 +1249,26 @@ export function VideoWorkspace() {
           >
             +
           </button>
+
+          <div style={{ width: 16 }} />
+
+          <button
+            className={styles.speedSelector}
+            onClick={() => setRenderQuality((q) => (q === 1 ? 2 : 1))}
+            title="Preview render quality (1x = fast, 2x = crisp)"
+            style={renderQuality === 2 ? { color: "#4ecdc4", borderColor: "#4ecdc4" } : undefined}
+          >
+            {renderQuality}x
+          </button>
+
+          <button
+            className={styles.transportBtn}
+            onClick={() => useTimelineStore.getState().toggleFx()}
+            title="Effects Library (FX)"
+            style={fxOpen ? { color: "#a78bfa", borderColor: "#a78bfa" } : undefined}
+          >
+            ✦ FX
+          </button>
         </div>
       </main>
 
@@ -1128,8 +1277,36 @@ export function VideoWorkspace() {
         <Inspector />
       </aside>
 
-      {/* Bottom: Timeline */}
+      {/* Bottom: Timeline (includes FX drawer when open) */}
       <div className={styles.timeline}>
+        {/* FX Drawer */}
+        {fxOpen && <EffectsLibrary onClose={() => useTimelineStore.getState().toggleFx()} />}
+
+        {/* Scene tabs */}
+        <div className={styles.sceneTabs}>
+          <button
+            className={`${styles.sceneTab} ${!editingSceneId ? styles.sceneTabActive : ""}`}
+            onClick={() => useTimelineStore.getState().setEditingScene(null)}
+          >
+            Master
+          </button>
+          {videoContent.scenes.map((sc, i) => (
+            <button
+              key={sc.id}
+              className={`${styles.sceneTab} ${editingSceneId === sc.id ? styles.sceneTabActive : ""}`}
+              onClick={() => useTimelineStore.getState().setEditingScene(sc.id)}
+              title={`Scene ${i + 1} (${(sc.durationMs / 1000).toFixed(1)}s)`}
+            >
+              S{i + 1}
+            </button>
+          ))}
+          {editingSceneId && (
+            <span className={styles.isolationBadge}>
+              Editing Scene {videoContent.scenes.findIndex((s) => s.id === editingSceneId) + 1}
+            </span>
+          )}
+        </div>
+
         {/* Timeline toolbar */}
         <div className={styles.timelineToolbar}>
           <button
@@ -1168,11 +1345,15 @@ export function VideoWorkspace() {
           totalDuration={totalDuration}
           onSeek={seekTo}
           projectDir={projectDir}
+          editingSceneId={editingSceneId}
         />
       </div>
 
       {/* Export progress overlay */}
       <ExportLayer size={size} />
+
+      {/* Keyboard shortcuts modal */}
+      {showShortcuts && <KeyboardShortcuts onClose={() => setShowShortcuts(false)} />}
     </div>
   );
 }

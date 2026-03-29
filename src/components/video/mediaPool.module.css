@@ -236,3 +236,59 @@
 .textPreset:active {
   cursor: grabbing;
 }
+
+/* Scene cards */
+.sceneGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sceneCard {
+  display: flex;
+  gap: 8px;
+  padding: 6px;
+  background: #2a2a2e;
+  border: 1px solid #333;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.sceneCard:hover {
+  border-color: #a78bfa;
+}
+
+.sceneCardActive {
+  border-color: #a78bfa;
+  background: #a78bfa10;
+}
+
+.sceneCardThumb {
+  width: 80px;
+  height: 45px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #1a1a1e;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.sceneCardInfo {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sceneCardName {
+  font-size: 12px;
+  font-weight: 600;
+  color: #ddd;
+}
+
+.sceneCardMeta {
+  font-size: 10px;
+  color: #666;
+}
