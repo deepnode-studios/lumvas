@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rustup update:*)",
+      "Bash(brew list:*)",
+      "Bash(otool -L /Users/alperengezer/lumvas/src-tauri/binaries/ffmpeg-aarch64-apple-darwin)"
+    ]
+  }
+}
