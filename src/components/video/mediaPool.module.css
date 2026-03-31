@@ -87,6 +87,8 @@
   border: 1px solid #333;
   cursor: grab;
   transition: border-color 0.15s;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .mediaItem:hover {
@@ -102,6 +104,8 @@
   aspect-ratio: 1;
   object-fit: cover;
   display: block;
+  pointer-events: none;
+  -webkit-user-drag: none;
 }
 
 .mediaPlaceholder {
@@ -171,6 +175,8 @@
   cursor: grab;
   position: relative;
   transition: border-color 0.15s;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .audioItem:hover {
@@ -227,6 +233,8 @@
   margin-bottom: 6px;
   color: #ccc;
   transition: border-color 0.15s;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .textPreset:hover {

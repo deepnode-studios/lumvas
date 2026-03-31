@@ -227,6 +227,7 @@ function SceneBlockDraggable({
   const theme = useLumvasStore((s) => s.theme);
   const assets = useLumvasStore((s) => s.assets.items);
   const size = useLumvasStore((s) => s.documentSize);
+  const language = useLumvasStore((s) => s.language);
   const projectDir = useFileStore((s) => s.currentFilePath);
 
   return (
@@ -246,6 +247,7 @@ function SceneBlockDraggable({
           assets={assets}
           size={size}
           projectDir={projectDir}
+          language={language}
         />
       )}
       <span style={{ position: "relative", zIndex: 1 }}>Scene {sceneIndex + 1}</span>
@@ -351,6 +353,7 @@ function ElementBarDraggable({
       const origExit = exitMs;
       let moved = false;
 
+      useLumvasStore.getState().setActiveScene(sceneId);
       useLumvasStore.getState().setActiveElement(el.id);
       useTimelineStore.getState().setInspectorTarget({ type: "element", sceneId, elementId: el.id });
 
@@ -376,6 +379,23 @@ function ElementBarDraggable({
     [sceneId, el.id, enterMs, exitMs, absEnter, zoomLevel, onSeek],
   );
 
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      useLumvasStore.getState().removeSceneElement(sceneId, el.id);
+    },
+    [sceneId, el.id],
+  );
+
+  const handleDelete = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      useLumvasStore.getState().removeSceneElement(sceneId, el.id);
+    },
+    [sceneId, el.id],
+  );
+
   return (
     <div
       className={`${styles.elementBar} ${isActive ? styles.elementBarActive : ""}`}
@@ -391,7 +411,8 @@ function ElementBarDraggable({
         cursor: "grab",
       }}
       onMouseDown={handleBodyDrag}
-      title={`${el.type}: ${el.content?.slice(0, 20) || "(empty)"}`}
+      onContextMenu={handleContextMenu}
+      title={`${el.type}: ${el.content?.slice(0, 20) || "(empty)"} — right-click to delete`}
     >
       {/* Scene boundary indicators */}
       {overflowsLeft && sceneBoundaryLeftX > 0 && (
@@ -403,6 +424,15 @@ function ElementBarDraggable({
 
       <div className={styles.dragHandleLeft} onMouseDown={handleLeftEdge} />
       <span className={styles.elementBarLabel}>{el.content?.slice(0, 12) || el.type}</span>
+      {isActive && width > 30 && (
+        <button
+          className={styles.elementBarDelete}
+          onMouseDown={handleDelete}
+          title="Remove element"
+        >
+          ×
+        </button>
+      )}
       <div className={styles.dragHandleRight} onMouseDown={handleRightEdge} />
     </div>
   );
@@ -477,11 +507,41 @@ function TimelineTracks({
 }) {
   const videoContent = useLumvasStore((s) => selectVideoContent(s));
   const addSceneElement = useLumvasStore((s) => s.addSceneElement);
+  const updateAudioTrack = useLumvasStore((s) => s.updateAudioTrack);
+  const reorderSceneElements = useLumvasStore((s) => s.reorderSceneElements);
   const inspectorTarget = useTimelineStore((s) => s.inspectorTarget);
   const currentSceneId = editingSceneId ?? getSceneAtTime(currentTimeMs);
   const totalWidth = (totalDuration / 1000) * zoomLevel;
   const tracksRef = useRef<HTMLDivElement>(null);
+  const labelsRef = useRef<HTMLDivElement>(null);
   const onScrubDown = useScrubbing(tracksRef, zoomLevel, totalDuration, onSeek);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+
+  // Sync vertical scroll between track labels and tracks area
+  useEffect(() => {
+    const tracks = tracksRef.current;
+    const labels = labelsRef.current;
+    if (!tracks || !labels) return;
+    let syncing = false;
+    const syncFromTracks = () => {
+      if (syncing) return;
+      syncing = true;
+      labels.scrollTop = tracks.scrollTop;
+      syncing = false;
+    };
+    const syncFromLabels = () => {
+      if (syncing) return;
+      syncing = true;
+      tracks.scrollTop = labels.scrollTop;
+      syncing = false;
+    };
+    tracks.addEventListener("scroll", syncFromTracks);
+    labels.addEventListener("scroll", syncFromLabels);
+    return () => {
+      tracks.removeEventListener("scroll", syncFromTracks);
+      labels.removeEventListener("scroll", syncFromLabels);
+    };
+  }, []);
 
   // Handle drop from media pool onto the video/elements track
   const handleDrop = useCallback(
@@ -489,6 +549,18 @@ function TimelineTracks({
       e.preventDefault();
       const mediaType = e.dataTransfer.getData("application/x-media-type");
       if (!mediaType) return;
+
+      // Audio drops: reposition audio track to the drop time
+      if (mediaType === "audio") {
+        const audioId = e.dataTransfer.getData("application/x-audio-id");
+        if (!audioId) return;
+        const rect = tracksRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        const x = e.clientX - rect.left;
+        const dropTimeMs = Math.max(0, (x / zoomLevel) * 1000);
+        updateAudioTrack(audioId, { startMs: Math.round(dropTimeMs) });
+        return;
+      }
 
       const targetSceneId = currentSceneId;
       if (!targetSceneId) return;
@@ -502,7 +574,7 @@ function TimelineTracks({
           id: uid(),
           type: "image" as const,
           content: assetData,
-          timing: { enterMs: 0, enterAnimation: { preset: "fade-in" as const, durationMs: 500 } },
+          timing: { enterMs: 0 },
         };
         addSceneElement(targetSceneId, el);
       } else if (mediaType === "text") {
@@ -515,12 +587,12 @@ function TimelineTracks({
           content: label,
           fontSize,
           fontWeight,
-          timing: { enterMs: 0, enterAnimation: { preset: "fade-in" as const, durationMs: 500 } },
+          timing: { enterMs: 0 },
         };
         addSceneElement(targetSceneId, el);
       }
     },
-    [currentSceneId, videoContent.scenes, addSceneElement],
+    [currentSceneId, videoContent.scenes, addSceneElement, updateAudioTrack, zoomLevel],
   );
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -533,11 +605,21 @@ function TimelineTracks({
   // Build a flat list of layers — each item is its own independent track row
   type Layer =
     | { kind: "video" }
-    | { kind: "element"; el: (typeof videoContent.scenes)[0]["elements"][0]; sceneId: string; sceneDurationMs: number; sceneStartMs: number }
+    | { kind: "element"; el: (typeof videoContent.scenes)[0]["elements"][0]; sceneId: string; sceneDurationMs: number; sceneStartMs: number; depth: number }
     | { kind: "audio"; track: (typeof videoContent.audioTracks)[0] }
     | { kind: "caption"; track: (typeof videoContent.captionTracks)[0] };
 
   const layers: Layer[] = [];
+
+  // Helper: push element and its children recursively
+  const pushElements = (elements: typeof videoContent.scenes[0]["elements"], sceneId: string, sceneDurationMs: number, sceneStartMs: number, depth: number) => {
+    for (const el of elements) {
+      layers.push({ kind: "element", el, sceneId, sceneDurationMs, sceneStartMs, depth });
+      if (el.type === "group" && el.children) {
+        pushElements(el.children as typeof elements, sceneId, sceneDurationMs, sceneStartMs, depth + 1);
+      }
+    }
+  };
 
   // Video scenes — always first
   layers.push({ kind: "video" });
@@ -546,9 +628,7 @@ function TimelineTracks({
     // Isolation mode: show only the editing scene's elements
     const scene = videoContent.scenes.find((s) => s.id === editingSceneId);
     if (scene) {
-      for (const el of scene.elements) {
-        layers.push({ kind: "element", el, sceneId: scene.id, sceneDurationMs: scene.durationMs, sceneStartMs: 0 });
-      }
+      pushElements(scene.elements, scene.id, scene.durationMs, 0, 0);
     }
     // Show audio tracks that overlap with this scene's time range
     const absStart = getSceneStartMs(editingSceneId);
@@ -567,9 +647,7 @@ function TimelineTracks({
     // Master mode: show everything
     for (const scene of videoContent.scenes) {
       const sceneStartMs = getSceneStartMs(scene.id);
-      for (const el of scene.elements) {
-        layers.push({ kind: "element", el, sceneId: scene.id, sceneDurationMs: scene.durationMs, sceneStartMs });
-      }
+      pushElements(scene.elements, scene.id, scene.durationMs, sceneStartMs, 0);
     }
     for (const track of videoContent.audioTracks) {
       layers.push({ kind: "audio", track });
@@ -579,11 +657,27 @@ function TimelineTracks({
     }
   }
 
+  // Build element index map: for each layer that is an element, find its index within its scene
+  const elementIndexMap = useMemo(() => {
+    const map = new Map<string, { sceneId: string; index: number }>();
+    const sceneCounts: Record<string, number> = {};
+    for (const layer of layers) {
+      if (layer.kind === "element") {
+        const count = sceneCounts[layer.sceneId] ?? 0;
+        map.set(layer.el.id, { sceneId: layer.sceneId, index: count });
+        sceneCounts[layer.sceneId] = count + 1;
+      }
+    }
+    return map;
+  }, [layers]);
+
+  const dragElementRef = useRef<{ elementId: string; sceneId: string; index: number } | null>(null);
+
   return (
     <div className={styles.timelineContent}>
       {/* Track labels */}
-      <div className={styles.trackLabels}>
-        {layers.map((layer) => {
+      <div className={styles.trackLabels} ref={labelsRef}>
+        {layers.map((layer, layerIdx) => {
           switch (layer.kind) {
             case "video":
               return (
@@ -592,13 +686,53 @@ function TimelineTracks({
                   Video
                 </div>
               );
-            case "element":
+            case "element": {
+              const elInfo = elementIndexMap.get(layer.el.id)!;
               return (
-                <div key={layer.el.id} className={styles.trackLabel}>
-                  <span className={styles.trackLabelDot} style={{ background: "#4ecdc4" }} />
-                  {(layer.el.content || layer.el.type).slice(0, 12)}
+                <div
+                  key={layer.el.id}
+                  className={styles.trackLabel}
+                  draggable
+                  style={{
+                    cursor: "grab",
+                    borderTop: dragOverIdx === layerIdx ? "2px solid #0a84ff" : undefined,
+                    paddingLeft: 8 + layer.depth * 12,
+                  }}
+                  onDragStart={(e) => {
+                    dragElementRef.current = { elementId: layer.el.id, sceneId: layer.sceneId, index: elInfo.index };
+                    e.dataTransfer.effectAllowed = "move";
+                    e.dataTransfer.setData("application/x-reorder-element", layer.el.id);
+                  }}
+                  onDragOver={(e) => {
+                    if (!dragElementRef.current) return;
+                    if (dragElementRef.current.sceneId !== layer.sceneId) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    setDragOverIdx(layerIdx);
+                  }}
+                  onDragLeave={() => setDragOverIdx(null)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setDragOverIdx(null);
+                    const drag = dragElementRef.current;
+                    if (!drag) return;
+                    if (drag.sceneId !== layer.sceneId) return;
+                    if (drag.index !== elInfo.index) {
+                      reorderSceneElements(layer.sceneId, drag.index, elInfo.index);
+                    }
+                    dragElementRef.current = null;
+                  }}
+                  onDragEnd={() => {
+                    setDragOverIdx(null);
+                    dragElementRef.current = null;
+                  }}
+                >
+                  <span className={styles.trackLabelDot} style={{ background: layer.el.type === "group" ? "#a78bfa" : "#4ecdc4" }} />
+                  {layer.el.type === "group" ? `⊞ (${(layer.el.children ?? []).length})` : (layer.el.content || layer.el.type).slice(0, 12)}
                 </div>
               );
+            }
             case "audio": {
               const color = AUDIO_COLORS[layer.track.type] ?? "#888";
               return (
@@ -969,6 +1103,23 @@ export function VideoWorkspace() {
       }
 
       switch (e.code) {
+        case "Delete":
+        case "Backspace": {
+          const target = useTimelineStore.getState().inspectorTarget;
+          if (!target) break;
+          e.preventDefault();
+          if (target.type === "element") {
+            useLumvasStore.getState().removeSceneElement(target.sceneId, target.elementId);
+            useTimelineStore.getState().setInspectorTarget(null);
+          } else if (target.type === "audio") {
+            useLumvasStore.getState().removeAudioTrack(target.trackId);
+            useTimelineStore.getState().setInspectorTarget(null);
+          } else if (target.type === "caption") {
+            useLumvasStore.getState().removeCaptionTrack(target.trackId);
+            useTimelineStore.getState().setInspectorTarget(null);
+          }
+          break;
+        }
         case "Space":
           e.preventDefault();
           if (isPlaying) useTimelineStore.getState().pause();
@@ -1012,6 +1163,41 @@ export function VideoWorkspace() {
     return () => window.removeEventListener("keydown", handler);
   }, [isPlaying, currentTimeMs, totalDuration, seekTo]);
 
+  // Resizable panels
+  const [leftWidth, setLeftWidth] = useState(260);
+  const [rightWidth, setRightWidth] = useState(280);
+  const [bottomHeight, setBottomHeight] = useState(280);
+
+  const handleResizeLeft = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = leftWidth;
+    const onMove = (ev: MouseEvent) => setLeftWidth(Math.max(180, Math.min(500, startW + (ev.clientX - startX))));
+    const onUp = () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [leftWidth]);
+
+  const handleResizeRight = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = rightWidth;
+    const onMove = (ev: MouseEvent) => setRightWidth(Math.max(200, Math.min(500, startW - (ev.clientX - startX))));
+    const onUp = () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [rightWidth]);
+
+  const handleResizeBottom = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = bottomHeight;
+    const onMove = (ev: MouseEvent) => setBottomHeight(Math.max(150, Math.min(600, startH - (ev.clientY - startY))));
+    const onUp = () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [bottomHeight]);
+
   // Preview scale: auto-fit or manual
   const centerRef = useRef<HTMLDivElement>(null);
   const clipboardRef = useRef<{ type: "element"; sceneId: string; element: import("@/types/schema").SceneElement } | { type: "scene"; scene: import("@/types/schema").VideoScene } | null>(null);
@@ -1042,6 +1228,47 @@ export function VideoWorkspace() {
   }, [size.width, size.height]);
 
   const previewScale = previewScaleMode === "fit" ? fitScale : manualScale;
+
+  // Drop onto preview area (artboard)
+  const addSceneElement = useLumvasStore((s) => s.addSceneElement);
+  const handlePreviewDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      const mediaType = e.dataTransfer.getData("application/x-media-type");
+      if (!mediaType) return;
+
+      const targetSceneId = currentSceneId;
+      if (!targetSceneId) return;
+
+      if (mediaType === "image") {
+        const assetData = e.dataTransfer.getData("application/x-asset-data");
+        addSceneElement(targetSceneId, {
+          id: uid(),
+          type: "image" as const,
+          content: assetData,
+          timing: { enterMs: 0 },
+        });
+      } else if (mediaType === "text") {
+        const label = e.dataTransfer.getData("application/x-text-label") || "New Text";
+        const fontSize = Number(e.dataTransfer.getData("application/x-text-fontSize")) || 24;
+        const fontWeight = Number(e.dataTransfer.getData("application/x-text-fontWeight")) || 400;
+        addSceneElement(targetSceneId, {
+          id: uid(),
+          type: "text" as const,
+          content: label,
+          fontSize,
+          fontWeight,
+          timing: { enterMs: 0 },
+        });
+      }
+    },
+    [currentSceneId, addSceneElement],
+  );
+
+  const handlePreviewDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  }, []);
 
   // Ctrl+scroll to zoom preview
   useEffect(() => {
@@ -1101,7 +1328,13 @@ export function VideoWorkspace() {
   }, [videoContent.scenes, currentTimeMs, totalDuration, seekTo]);
 
   return (
-    <div className={styles.layout}>
+    <div
+      className={styles.layout}
+      style={{
+        gridTemplateColumns: `${leftWidth}px 4px 1fr 4px ${rightWidth}px`,
+        gridTemplateRows: `48px 1fr 4px ${bottomHeight}px`,
+      }}
+    >
       {/* Header */}
       <header className={styles.header}>
         <div className={styles.headerLeft}>
@@ -1116,9 +1349,12 @@ export function VideoWorkspace() {
         <MediaPool />
       </aside>
 
+      {/* Left resize handle */}
+      <div className={styles.resizeHandle} style={{ gridColumn: 2, gridRow: 2, cursor: "col-resize" }} onMouseDown={handleResizeLeft} />
+
       {/* Center: preview + transport */}
       <main className={styles.center} ref={centerRef}>
-        <div className={styles.previewArea}>
+        <div className={styles.previewArea} onDrop={handlePreviewDrop} onDragOver={handlePreviewDragOver}>
           {currentScene ? (
             <div className={styles.canvasWrapper}>
               <div
@@ -1145,11 +1381,17 @@ export function VideoWorkspace() {
                     projectDir={projectDir}
                     currentTimeMs={sceneTime}
                     activeElementId={useLumvasStore.getState().activeElementId}
-                    onElementClick={(id) => useLumvasStore.getState().setActiveElement(id)}
+                    onElementClick={(id) => {
+                      useLumvasStore.getState().setActiveScene(currentScene.id);
+                      useLumvasStore.getState().setActiveElement(id);
+                      useTimelineStore.getState().setInspectorTarget({ type: "element", sceneId: currentScene.id, elementId: id });
+                    }}
                     previewScale={previewScale}
                     onElementDragMove={(id, dx, dy) => {
                       const el = currentScene.elements.find((e) => e.id === id);
                       if (!el) return;
+                      useLumvasStore.getState().setActiveScene(currentScene.id);
+                      useLumvasStore.getState().setActiveElement(id);
                       useLumvasStore.getState().updateSceneElement(currentScene.id, id, {
                         x: (el.x ?? 0) + dx,
                         y: (el.y ?? 0) + dy,
@@ -1272,10 +1514,16 @@ export function VideoWorkspace() {
         </div>
       </main>
 
+      {/* Right resize handle */}
+      <div className={styles.resizeHandle} style={{ gridColumn: 4, gridRow: 2, cursor: "col-resize" }} onMouseDown={handleResizeRight} />
+
       {/* Right panel: context-sensitive inspector */}
       <aside className={styles.rightPanel}>
         <Inspector />
       </aside>
+
+      {/* Bottom resize handle */}
+      <div className={styles.resizeHandleH} onMouseDown={handleResizeBottom} />
 
       {/* Bottom: Timeline (includes FX drawer when open) */}
       <div className={styles.timeline}>

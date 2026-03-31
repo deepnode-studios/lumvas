@@ -32,6 +32,15 @@ function getDomPathLength(d: string): number {
 }
 import styles from "../slides/slides.module.css";
 
+/** Resolve fontId to a CSS font-family string. Checks theme tokens first, then treats as raw CSS value. */
+function resolveFont(fontId: string | undefined, theme: ThemeNode): string | undefined {
+  if (!fontId) return undefined;
+  const token = theme.fonts?.find((f) => f.id === fontId);
+  if (token) return token.value;
+  // Not a token — treat as a raw CSS font-family value
+  return fontId;
+}
+
 // TODO: Extract ElementRenderer from SlideRenderer into shared module.
 // For now, we import the full SlideRenderer's rendering logic via a simpler approach:
 // SceneRenderer wraps each element in an animated div and delegates actual element rendering
@@ -74,6 +83,7 @@ export const SceneRenderer = forwardRef<HTMLDivElement, SceneRendererProps>(
       <div
         ref={ref}
         className={styles.slide}
+        lang={language}
         dir={language === "ar" || language === "he" ? "rtl" : undefined}
         style={{
           width: size.width,
@@ -158,7 +168,10 @@ function AnimatedElement({
 
   // Static transforms from element properties (applied on top of animation transforms)
   const staticParts: string[] = [];
-  if (element.x || element.y) staticParts.push(`translate(${element.x ?? 0}px, ${element.y ?? 0}px)`);
+  // Anchor offset: translate by -anchorX%, -anchorY% of element's own size
+  const ax = element.anchorX ?? 0;
+  const ay = element.anchorY ?? 0;
+  if (ax !== 0 || ay !== 0) staticParts.push(`translate(${-ax * 100}%, ${-ay * 100}%)`);
   if (element.scale != null && element.scale !== 1) staticParts.push(`scale(${element.scale})`);
   else if (element.scaleX != null || element.scaleY != null) staticParts.push(`scale(${element.scaleX ?? 1}, ${element.scaleY ?? 1})`);
   if (element.rotation) staticParts.push(`rotate(${element.rotation}deg)`);
@@ -194,10 +207,24 @@ function AnimatedElement({
     ? { boxShadow: "inset 0 0 0 3px #0071e3", borderRadius: 4 }
     : {};
 
+  // Auto-width for text-based elements: if no explicit sceneWidth, default based on type
+  const needsAutoWidth = !element.sceneWidth && (
+    element.type === "text" || element.type === "button" || element.type === "list" ||
+    element.type === "counter" || element.type === "group"
+  );
+  const autoWidth = needsAutoWidth
+    ? (element.anchorX === 0.5 ? "90%" : undefined)
+    : undefined;
+  const autoMaxWidth = needsAutoWidth && !autoWidth ? "90%" : undefined;
+
   return (
     <div
       style={{
-        width: element.sceneWidth ?? undefined,
+        position: "absolute",
+        left: element.x ?? 0,
+        top: element.y ?? 0,
+        width: element.sceneWidth ?? autoWidth,
+        maxWidth: autoMaxWidth,
         height: element.sceneHeight ?? undefined,
         transform: visible ? combinedTransform : undefined,
         opacity: visible ? opacity : 0,
@@ -207,7 +234,6 @@ function AnimatedElement({
         visibility: visible ? "visible" : "hidden",
         pointerEvents: visible ? undefined : "none",
         willChange: "transform, opacity, filter",
-        flexShrink: element.sceneWidth ? 0 : undefined,
         ...(visible ? activeOutline : {}),
         cursor: visible ? (onDragMove ? "grab" : onClick ? "pointer" : undefined) : undefined,
       }}
@@ -234,7 +260,179 @@ function AnimatedElement({
         window.addEventListener("mouseup", onUp);
       } : undefined}
     >
-      {renderElementContent(element, {
+      {element.type === "group" ? (
+        <GroupContent
+          element={element}
+          sceneTimeMs={sceneTimeMs}
+          sceneDurationMs={sceneDurationMs}
+          theme={theme}
+          assets={assets}
+          projectDir={projectDir}
+          resolveColor={resolveColor}
+          isActive={isActive}
+          activeElementId={undefined}
+          onClick={onClick}
+          onDragMove={onDragMove}
+          previewScale={previewScale}
+          animBgColor={computed.backgroundColor}
+        />
+      ) : renderElementContent(element, {
+        color,
+        fontSize,
+        fontWeight,
+        theme,
+        assets,
+        projectDir,
+        animColor: computed.color,
+        animBgColor: computed.backgroundColor,
+        drawProgress: computed.drawProgress,
+        sceneTimeMs,
+        sceneDurationMs,
+      })}
+    </div>
+  );
+}
+
+/** Render group content: flex container with independently animated children */
+function GroupContent({
+  element,
+  sceneTimeMs,
+  sceneDurationMs,
+  theme,
+  assets,
+  projectDir,
+  resolveColor,
+  isActive,
+  activeElementId,
+  onClick,
+  onDragMove,
+  previewScale,
+  animBgColor,
+}: {
+  element: SceneElement;
+  sceneTimeMs: number;
+  sceneDurationMs: number;
+  theme: ThemeNode;
+  assets: AssetItem[];
+  projectDir?: string | null;
+  resolveColor: (token: string | undefined) => string;
+  isActive: boolean;
+  activeElementId?: string | null;
+  onClick?: () => void;
+  onDragMove?: (dx: number, dy: number) => void;
+  previewScale: number;
+  animBgColor?: string;
+}) {
+  const children = (element.repeatCount && element.repeatCount > 1 && element.children?.[0])
+    ? Array.from({ length: element.repeatCount }, (_, i) => ({
+        ...element.children![0],
+        id: `${element.children![0].id}_r${i}`,
+        timing: {
+          ...element.children![0].timing,
+          enterMs: (element.children![0].timing.enterMs ?? 0) + i * (element.staggerMs ?? 0),
+        },
+      }))
+    : (element.children ?? []) as SceneElement[];
+
+  return (
+    <div style={{
+      display: "flex",
+      flexDirection: element.direction ?? "row",
+      alignItems: element.alignItems ?? "center",
+      justifyContent: element.justifyContent ?? "flex-start",
+      gap: element.gap ?? 12,
+      padding: element.padding,
+      width: element.width ?? "100%",
+      backgroundColor: animBgColor ?? (element.backgroundColor || undefined),
+      borderRadius: element.borderRadius,
+    }}>
+      {children.map((child) => (
+        <GroupChildElement
+          key={child.id}
+          element={child}
+          sceneTimeMs={sceneTimeMs}
+          sceneDurationMs={sceneDurationMs}
+          theme={theme}
+          assets={assets}
+          projectDir={projectDir}
+          resolveColor={resolveColor}
+          isActive={activeElementId === child.id}
+          previewScale={previewScale}
+        />
+      ))}
+    </div>
+  );
+}
+
+/** A child element within a group — uses relative positioning (flex flow) with independent animation */
+function GroupChildElement({
+  element,
+  sceneTimeMs,
+  sceneDurationMs,
+  theme,
+  assets,
+  projectDir,
+  resolveColor,
+  isActive,
+  previewScale,
+}: {
+  element: SceneElement;
+  sceneTimeMs: number;
+  sceneDurationMs: number;
+  theme: ThemeNode;
+  assets: AssetItem[];
+  projectDir?: string | null;
+  resolveColor: (token: string | undefined) => string;
+  isActive: boolean;
+  previewScale: number;
+}) {
+  const computed = (element.timing.effects && element.timing.effects.length > 0)
+    ? computeEffects(element, sceneTimeMs, sceneDurationMs)
+    : computeElementStyle(element, sceneTimeMs, sceneDurationMs);
+  const { transform: animTransform, opacity: animOpacity, filter, visible } = computed;
+
+  const staticParts: string[] = [];
+  if (element.scale != null && element.scale !== 1) staticParts.push(`scale(${element.scale})`);
+  else if (element.scaleX != null || element.scaleY != null) staticParts.push(`scale(${element.scaleX ?? 1}, ${element.scaleY ?? 1})`);
+  if (element.rotation) staticParts.push(`rotate(${element.rotation}deg)`);
+  const combinedTransform = [staticParts.join(" "), animTransform].filter(Boolean).join(" ") || undefined;
+  const opacity = (element.opacity ?? 1) * animOpacity;
+
+  const color = resolveColor(element.color) || theme.primaryColor;
+  const fontSize = element.fontSize ?? theme.fontSize;
+  const fontWeight = element.fontWeight ?? theme.fontWeight;
+
+  return (
+    <div
+      style={{
+        // Relative positioning within the flex group
+        position: "relative",
+        flex: element.flex ?? undefined,
+        flexShrink: element.flexShrink ?? undefined,
+        alignSelf: element.alignSelf ?? undefined,
+        transform: visible ? combinedTransform : undefined,
+        opacity: visible ? opacity : 0,
+        filter: visible ? ([filter].filter(Boolean).join(" ") || undefined) : undefined,
+        visibility: visible ? "visible" : "hidden",
+        pointerEvents: visible ? undefined : "none",
+        willChange: "transform, opacity",
+        ...(isActive ? { boxShadow: "inset 0 0 0 2px #0071e3", borderRadius: 4 } : {}),
+      }}
+    >
+      {element.type === "group" ? (
+        <GroupContent
+          element={element}
+          sceneTimeMs={sceneTimeMs}
+          sceneDurationMs={sceneDurationMs}
+          theme={theme}
+          assets={assets}
+          projectDir={projectDir}
+          resolveColor={resolveColor}
+          isActive={isActive}
+          previewScale={previewScale}
+          animBgColor={computed.backgroundColor}
+        />
+      ) : renderElementContent(element, {
         color,
         fontSize,
         fontWeight,
@@ -305,6 +503,7 @@ function renderElementContent(
             color: ctx.animColor ?? ctx.color,
             fontSize: el.fontSize ?? ctx.fontSize,
             fontWeight: el.fontWeight ?? ctx.fontWeight,
+            fontFamily: resolveFont(el.fontId, ctx.theme),
             textAlign: el.textAlign ?? "left",
             letterSpacing: el.letterSpacing,
             lineHeight: el.lineHeight,
@@ -345,15 +544,38 @@ function renderElementContent(
       const asset = el.assetId ? ctx.assets.find((a) => a.id === el.assetId) : ctx.assets[0];
       const src = resolveMediaSrc(asset?.data, ctx.projectDir);
       if (!src) return null;
+      const tintColor = asset?.tintable ? (ctx.animColor ?? ctx.color ?? ctx.theme.primaryColor) : undefined;
+      const baseSize: React.CSSProperties = {
+        maxWidth: el.maxWidth ?? "120px",
+        maxHeight: el.height ?? "80px",
+        objectFit: "contain" as const,
+      };
+      if (tintColor) {
+        return (
+          <div
+            style={{
+              ...baseSize,
+              display: "inline-block",
+              backgroundColor: tintColor,
+              WebkitMaskImage: `url(${src})`,
+              WebkitMaskSize: "contain",
+              WebkitMaskRepeat: "no-repeat",
+              WebkitMaskPosition: "center",
+              maskImage: `url(${src})`,
+              maskSize: "contain",
+              maskRepeat: "no-repeat",
+              maskPosition: "center",
+              width: el.width ?? el.maxWidth ?? "120px",
+              height: el.height ?? "80px",
+            }}
+          />
+        );
+      }
       return (
         <img
           src={src}
           alt={asset?.label ?? "Logo"}
-          style={{
-            maxWidth: el.maxWidth ?? "120px",
-            maxHeight: el.height ?? "80px",
-            objectFit: "contain",
-          }}
+          style={baseSize}
         />
       );
     }
@@ -381,6 +603,7 @@ function renderElementContent(
           color: el.textColor ?? "#ffffff",
           fontSize: el.fontSize ?? ctx.fontSize,
           fontWeight: el.fontWeight ?? 600,
+          fontFamily: resolveFont(el.fontId, ctx.theme),
           borderRadius: el.borderRadius ?? ctx.theme.borderRadius,
           textAlign: "center",
         }}>
@@ -390,8 +613,17 @@ function renderElementContent(
 
     case "group": {
       const children = (el.repeatCount && el.repeatCount > 1 && el.children?.[0])
-        ? Array.from({ length: el.repeatCount }, (_, i) => ({ ...el.children![0], id: `${el.children![0].id}_r${i}` }))
+        ? Array.from({ length: el.repeatCount }, (_, i) => ({
+            ...el.children![0],
+            id: `${el.children![0].id}_r${i}`,
+            timing: {
+              ...el.children![0].timing,
+              enterMs: (el.children![0].timing.enterMs ?? 0) + i * (el.staggerMs ?? 0),
+            },
+          }))
         : (el.children ?? []);
+      // Render as a stub here — the actual group rendering with AnimatedElement
+      // children is handled by GroupElement (rendered from AnimatedElement's parent).
       return (
         <div style={{
           display: "flex",
@@ -404,17 +636,7 @@ function renderElementContent(
           backgroundColor: ctx.animBgColor ?? (el.backgroundColor || undefined),
           borderRadius: el.borderRadius,
         }}>
-          {children.map((child, i) => (
-            <div key={child.id}>
-              {renderElementContent(child, {
-                ...ctx,
-                // stagger: offset sceneTimeMs so each child appears delayed
-                sceneTimeMs: ctx.sceneTimeMs !== undefined && el.staggerMs
-                  ? ctx.sceneTimeMs - i * el.staggerMs
-                  : ctx.sceneTimeMs,
-              })}
-            </div>
-          ))}
+          {/* Children are rendered below by AnimatedElement to get independent animation */}
         </div>
       );
     }

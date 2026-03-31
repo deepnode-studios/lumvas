@@ -105,6 +105,101 @@ function resolveMediaSrcLocal(ref: string | undefined, projectDir: string | null
 
 /* ─── Color resolution ─── */
 
+/** Parse a CSS gradient string into a Canvas2D gradient */
+function parseCssGradient(
+  css: string,
+  w: number,
+  h: number,
+  ctx: CanvasRenderingContext2D,
+): CanvasGradient | null {
+  try {
+    // linear-gradient(angle, color1 stop1, color2 stop2, ...)
+    const linearMatch = css.match(/linear-gradient\(\s*([^,]+)\s*,\s*(.+)\s*\)/i);
+    if (linearMatch) {
+      const angleStr = linearMatch[1].trim();
+      const stopsStr = linearMatch[2];
+
+      // Parse angle
+      let angle = 180; // default: top to bottom
+      if (angleStr.endsWith("deg")) {
+        angle = parseFloat(angleStr);
+      } else if (angleStr === "to right") angle = 90;
+      else if (angleStr === "to left") angle = 270;
+      else if (angleStr === "to bottom") angle = 180;
+      else if (angleStr === "to top") angle = 0;
+      else if (angleStr === "to bottom right") angle = 135;
+      else if (angleStr === "to bottom left") angle = 225;
+      else if (angleStr === "to top right") angle = 45;
+      else if (angleStr === "to top left") angle = 315;
+
+      // Convert angle to start/end points
+      const rad = ((angle - 90) * Math.PI) / 180;
+      const diag = Math.sqrt(w * w + h * h) / 2;
+      const cx = w / 2, cy = h / 2;
+      const dx = Math.cos(rad) * diag;
+      const dy = Math.sin(rad) * diag;
+      const grad = ctx.createLinearGradient(cx - dx, cy - dy, cx + dx, cy + dy);
+
+      // Parse color stops
+      const stops = stopsStr.split(/,(?![^(]*\))/).map((s) => s.trim());
+      for (let i = 0; i < stops.length; i++) {
+        const parts = stops[i].match(/^(.+?)\s+([0-9.]+%?)$/);
+        if (parts) {
+          const color = parts[1].trim();
+          const pos = parts[2].endsWith("%") ? parseFloat(parts[2]) / 100 : parseFloat(parts[2]);
+          grad.addColorStop(Math.max(0, Math.min(1, pos)), color);
+        } else {
+          // No explicit stop position — distribute evenly
+          grad.addColorStop(i / Math.max(1, stops.length - 1), stops[i].trim());
+        }
+      }
+      return grad;
+    }
+
+    // radial-gradient(shape at position, color1 stop1, color2 stop2, ...)
+    const radialMatch = css.match(/radial-gradient\(\s*([^,]+)\s*,\s*(.+)\s*\)/i);
+    if (radialMatch) {
+      const shapeStr = radialMatch[1].trim();
+      const stopsStr = radialMatch[2];
+
+      // Parse position
+      let cx = w / 2, cy = h / 2;
+      const atMatch = shapeStr.match(/at\s+([0-9.]+%?)\s+([0-9.]+%?)/);
+      if (atMatch) {
+        cx = atMatch[1].endsWith("%") ? (parseFloat(atMatch[1]) / 100) * w : parseFloat(atMatch[1]);
+        cy = atMatch[2].endsWith("%") ? (parseFloat(atMatch[2]) / 100) * h : parseFloat(atMatch[2]);
+      } else if (shapeStr.includes("at center")) {
+        cx = w / 2; cy = h / 2;
+      }
+
+      // Radius: use distance to farthest corner
+      const r = Math.max(
+        Math.sqrt(cx * cx + cy * cy),
+        Math.sqrt((w - cx) ** 2 + cy ** 2),
+        Math.sqrt(cx ** 2 + (h - cy) ** 2),
+        Math.sqrt((w - cx) ** 2 + (h - cy) ** 2),
+      );
+      const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+
+      const stops = stopsStr.split(/,(?![^(]*\))/).map((s) => s.trim());
+      for (let i = 0; i < stops.length; i++) {
+        const parts = stops[i].match(/^(.+?)\s+([0-9.]+%?)$/);
+        if (parts) {
+          const color = parts[1].trim();
+          const pos = parts[2].endsWith("%") ? parseFloat(parts[2]) / 100 : parseFloat(parts[2]);
+          grad.addColorStop(Math.max(0, Math.min(1, pos)), color);
+        } else {
+          grad.addColorStop(i / Math.max(1, stops.length - 1), stops[i].trim());
+        }
+      }
+      return grad;
+    }
+  } catch (e) {
+    console.warn("[canvasRenderer] Failed to parse gradient:", css, e);
+  }
+  return null;
+}
+
 function resolveColor(token: string | undefined, theme: ThemeNode, scene: VideoScene): string {
   if (!token) return "";
   if (token === "primary") return scene.style?.primaryColor ?? theme.primaryColor;
@@ -113,6 +208,14 @@ function resolveColor(token: string | undefined, theme: ThemeNode, scene: VideoS
   const pal = theme.palette?.find((c) => c.id === token);
   if (pal) return pal.value;
   return token;
+}
+
+/** Resolve fontId to CSS font-family. Checks theme tokens first, then treats as raw value. */
+function resolveFont(fontId: string | undefined, theme: ThemeNode): string {
+  if (!fontId) return theme.fontFamily;
+  const token = theme.fonts?.find((f) => f.id === fontId);
+  if (token) return token.value;
+  return fontId; // raw CSS font-family
 }
 
 /* ─── Flex layout helper ─── */
@@ -177,7 +280,8 @@ function estimateElementSize(
     case "text": {
       const fs = el.fontSize ?? theme.fontSize;
       const lh = el.lineHeight || 1.4;
-      ctx.font = `${el.fontWeight ?? theme.fontWeight} ${fs}px ${theme.fontFamily}`;
+      const ff = resolveFont(el.fontId, theme);
+      ctx.font = `${el.fontWeight ?? theme.fontWeight} ${fs}px ${ff}`;
       const maxW = parseSizeW(el.maxWidth, w);
       const h = measureTextHeight(ctx, el.content || " ", maxW, fs, lh);
       return { w: Math.min(w, maxW), h };
@@ -194,7 +298,7 @@ function estimateElementSize(
       return { w, h: parseSizeH(el.height, 24) };
     case "button": {
       const fs = el.fontSize ?? theme.fontSize;
-      ctx.font = `${el.fontWeight ?? 600} ${fs}px ${theme.fontFamily}`;
+      ctx.font = `${el.fontWeight ?? 600} ${fs}px ${resolveFont(el.fontId, theme)}`;
       const tm = ctx.measureText(el.content || "Button");
       const px = el.paddingX ?? 32;
       const py = el.paddingY ?? 14;
@@ -219,7 +323,7 @@ function estimateElementSize(
     }
     case "counter": {
       const fs = el.fontSize ?? theme.fontSize;
-      ctx.font = `${el.fontWeight ?? theme.fontWeight} ${fs}px ${theme.fontFamily}`;
+      ctx.font = `${el.fontWeight ?? theme.fontWeight} ${fs}px ${resolveFont(el.fontId, theme)}`;
       const sample = (el.counterPrefix ?? "") + String(Math.max(Math.abs(el.counterStart ?? 0), Math.abs(el.counterEnd ?? 100))) + (el.counterSuffix ?? "");
       return { w: Math.min(w, ctx.measureText(sample).width + 8), h: fs * 1.4 };
     }
@@ -252,14 +356,15 @@ function drawText(
     opacity?: number;
     textTransform?: string;
     letterSpacing?: number;
+    language?: string;
   },
 ) {
   if (!text) return;
 
   let displayText = text;
-  if (opts.textTransform === "uppercase") displayText = text.toUpperCase();
-  else if (opts.textTransform === "lowercase") displayText = text.toLowerCase();
-  else if (opts.textTransform === "capitalize") displayText = text.replace(/\b\w/g, (c) => c.toUpperCase());
+  if (opts.textTransform === "uppercase") displayText = text.toLocaleUpperCase(opts.language);
+  else if (opts.textTransform === "lowercase") displayText = text.toLocaleLowerCase(opts.language);
+  else if (opts.textTransform === "capitalize") displayText = text.replace(/\b\w/g, (c) => c.toLocaleUpperCase(opts.language));
 
   ctx.save();
   if (opts.opacity !== undefined && opts.opacity < 1) ctx.globalAlpha *= opts.opacity;
@@ -268,8 +373,9 @@ function drawText(
   ctx.textAlign = opts.textAlign ?? "left";
   ctx.textBaseline = "top";
 
-  if (opts.letterSpacing) {
-    (ctx as any).letterSpacing = `${opts.letterSpacing}px`;
+  // Canvas2D letterSpacing (Chrome 99+, Safari 17.4+, Firefox 115+)
+  if ("letterSpacing" in ctx) {
+    (ctx as any).letterSpacing = opts.letterSpacing ? `${opts.letterSpacing}px` : "0px";
   }
 
   const lh = opts.fontSize * (opts.lineHeight || 1.4);
@@ -450,6 +556,7 @@ function drawElement(
   projectDir: string | null | undefined,
   anim?: ComputedElementStyle,
   sceneTimeMs?: number,
+  language?: string,
 ) {
   const color = anim?.color ?? resolveColor(el.color, theme, scene) ?? theme.primaryColor;
   const bgColor = anim?.backgroundColor ?? resolveColor(el.backgroundColor, theme, scene);
@@ -460,12 +567,13 @@ function drawElement(
         color,
         fontSize: el.fontSize ?? theme.fontSize,
         fontWeight: el.fontWeight ?? theme.fontWeight,
-        fontFamily: theme.fontFamily,
+        fontFamily: resolveFont(el.fontId, theme),
         textAlign: (el.textAlign as CanvasTextAlign) ?? "left",
         lineHeight: el.lineHeight,
         opacity: el.opacity,
         textTransform: el.textTransform,
         letterSpacing: el.letterSpacing,
+        language,
       });
       break;
 
@@ -478,7 +586,35 @@ function drawElement(
     case "logo": {
       const asset = el.assetId ? assets.find((a) => a.id === el.assetId) : assets[0];
       const src = resolveMediaSrcLocal(asset?.data, projectDir);
-      if (src) drawImage(ctx, src, box, 0, "contain");
+      if (!src) break;
+      if (asset?.tintable) {
+        // Tint: draw image, then composite with color
+        const img = imageCache.get(src);
+        if (img) {
+          // Draw to offscreen canvas, then apply tint via globalCompositeOperation
+          const oc = document.createElement("canvas");
+          oc.width = box.w;
+          oc.height = box.h;
+          const octx = oc.getContext("2d")!;
+          // Draw image fitted to box (contain)
+          const scale = Math.min(box.w / img.naturalWidth, box.h / img.naturalHeight);
+          const dw = img.naturalWidth * scale;
+          const dh = img.naturalHeight * scale;
+          const dx = (box.w - dw) / 2;
+          const dy = (box.h - dh) / 2;
+          octx.drawImage(img, dx, dy, dw, dh);
+          // Apply tint: source-in composites color onto existing alpha
+          octx.globalCompositeOperation = "source-in";
+          const tintColor = anim?.color ?? (resolveColor(el.color, theme, scene) || theme.primaryColor);
+          octx.fillStyle = tintColor;
+          octx.fillRect(0, 0, box.w, box.h);
+          ctx.drawImage(oc, box.x, box.y);
+        } else {
+          preloadImage(src).catch(() => {});
+        }
+      } else {
+        drawImage(ctx, src, box, 0, "contain");
+      }
       break;
     }
 
@@ -508,7 +644,7 @@ function drawElement(
         color: el.textColor ?? "#ffffff",
         fontSize: el.fontSize ?? theme.fontSize,
         fontWeight: el.fontWeight ?? 600,
-        fontFamily: theme.fontFamily,
+        fontFamily: resolveFont(el.fontId, theme),
         textAlign: "center",
         lineHeight: 1.2,
       });
@@ -549,7 +685,16 @@ function drawElement(
         const staggeredChild = (el.staggerMs && el.staggerMs > 0)
           ? { ...children[i], timing: { ...children[i].timing, enterMs: children[i].timing.enterMs + i * el.staggerMs } }
           : children[i];
-        drawElement(ctx, staggeredChild, { x: cx, y: cy, w: cs.w, h: cs.h }, theme, scene, assets, projectDir, undefined, sceneTimeMs);
+        // Compute animation for each child independently
+        const childAnim = (staggeredChild.timing.effects && staggeredChild.timing.effects.length > 0)
+          ? computeEffects(staggeredChild, sceneTimeMs ?? 0, scene.durationMs)
+          : computeElementStyle(staggeredChild, sceneTimeMs ?? 0, scene.durationMs);
+        if (!childAnim.visible) {
+          if (dir === "row") cx += cs.w + gap;
+          else cy += cs.h + gap;
+          continue;
+        }
+        drawElement(ctx, staggeredChild, { x: cx, y: cy, w: cs.w, h: cs.h }, theme, scene, assets, projectDir, childAnim, sceneTimeMs, language);
         if (dir === "row") cx += cs.w + gap;
         else cy += cs.h + gap;
       }
@@ -577,7 +722,7 @@ function drawElement(
         color,
         fontSize: el.fontSize ?? theme.fontSize,
         fontWeight: el.fontWeight ?? theme.fontWeight,
-        fontFamily: theme.fontFamily,
+        fontFamily: resolveFont(el.fontId, theme),
         textAlign: (el.textAlign as CanvasTextAlign) ?? "center",
         lineHeight: el.lineHeight,
         opacity: el.opacity,
@@ -610,8 +755,8 @@ function drawElement(
 
       if (dp < 1 && totalLen > 0) {
         const drawn = totalLen * dp;
-        ctx.setLineDash([drawn, totalLen]);
-        ctx.lineDashOffset = 0;
+        ctx.setLineDash([totalLen, totalLen]);
+        ctx.lineDashOffset = totalLen - drawn;
       }
 
       const path = new Path2D(d);
@@ -669,7 +814,7 @@ function drawElement(
           color,
           fontSize: el.fontSize ?? theme.fontSize,
           fontWeight: el.fontWeight ?? theme.fontWeight,
-          fontFamily: theme.fontFamily,
+          fontFamily: resolveFont(el.fontId, theme),
         });
       }
   }
@@ -736,6 +881,7 @@ export function renderSceneToCanvas(
   size: DocumentSize,
   projectDir: string | null | undefined,
   sceneTimeMs: number,
+  language?: string,
 ) {
   const w = size.width;
   const h = size.height;
@@ -746,8 +892,15 @@ export function renderSceneToCanvas(
   ctx.fillStyle = bgColor;
   ctx.fillRect(0, 0, w, h);
 
-  // Background gradient (CSS gradient → we just draw the solid bg for now)
-  // TODO: parse CSS gradients and draw them
+  // Background gradient
+  const gradientCss = scene.style?.backgroundGradient;
+  if (gradientCss) {
+    const grad = parseCssGradient(gradientCss, w, h, ctx);
+    if (grad) {
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+    }
+  }
 
   // Layout: simple flex layout
   const padding = scene.padding ?? 0;
@@ -802,19 +955,19 @@ export function renderSceneToCanvas(
   let cursor = mainOffset;
 
   for (const { el, size: sz, anim } of visibleElements) {
-    // Align items (cross axis)
-    const crossSpace = isRow ? contentArea.h : contentArea.w;
-    const crossSize = isRow ? sz.h : sz.w;
-    let crossOffset: number;
-    switch (alignItems) {
-      case "flex-start": crossOffset = 0; break;
-      case "flex-end": crossOffset = crossSpace - crossSize; break;
-      case "center": default: crossOffset = (crossSpace - crossSize) / 2;
+    // Absolute positioning: use el.x/el.y with anchor offset
+    // Auto-width for text-based elements without explicit sceneWidth (match DOM renderer)
+    const needsAutoWidth = !el.sceneWidth && (
+      el.type === "text" || el.type === "button" || el.type === "list" ||
+      el.type === "counter" || el.type === "group"
+    );
+    if (needsAutoWidth && (el.anchorX === 0.5)) {
+      sz.w = Math.round(w * 0.9);
     }
 
-    const box: LayoutBox = isRow
-      ? { x: contentArea.x + cursor, y: contentArea.y + crossOffset, w: sz.w, h: sz.h }
-      : { x: contentArea.x + crossOffset, y: contentArea.y + cursor, w: sz.w, h: sz.h };
+    const ax = el.anchorX ?? 0;
+    const ay = el.anchorY ?? 0;
+    const box: LayoutBox = { x: (el.x ?? 0) - ax * sz.w, y: (el.y ?? 0) - ay * sz.h, w: sz.w, h: sz.h };
 
     // Apply transforms
     ctx.save();
@@ -828,8 +981,7 @@ export function renderSceneToCanvas(
 
     ctx.translate(cx, cy);
 
-    // Static element transforms (x/y offset, scale, rotation)
-    if (el.x || el.y) ctx.translate(el.x ?? 0, el.y ?? 0);
+    // Static element transforms (scale, rotation)
     if (el.scale != null && el.scale !== 1) {
       ctx.scale(el.scale, el.scale);
     } else if (el.scaleX != null || el.scaleY != null) {
@@ -861,12 +1013,11 @@ export function renderSceneToCanvas(
       ctx.filter = `blur(${blurMatch[1]}px)`;
     }
 
-    drawElement(ctx, el, box, theme, scene, assets, projectDir, anim, sceneTimeMs);
+    drawElement(ctx, el, box, theme, scene, assets, projectDir, anim, sceneTimeMs, language);
 
     ctx.restore();
 
     if (anim.glitch) hasGlitch = true;
-    cursor += (isRow ? sz.w : sz.h) + mainGap;
   }
 
   ctx.restore();

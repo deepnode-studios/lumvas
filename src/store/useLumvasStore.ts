@@ -411,6 +411,90 @@ function extractElement(
   return { tree: elements, extracted: null };
 }
 
+/* ─── Scene element deep helpers (SceneElement has children?: SceneElement[]) ─── */
+
+/** Find a scene element anywhere in the tree */
+export function findSceneElementDeep(elements: SceneElement[], id: string): SceneElement | null {
+  for (const el of elements) {
+    if (el.id === id) return el;
+    if (el.children) {
+      const found = findSceneElementDeep(el.children, id);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+/** Update a scene element anywhere in the tree */
+function updateSceneElementDeep(elements: SceneElement[], id: string, patch: Partial<SceneElement>): SceneElement[] {
+  return elements.map((el) => {
+    if (el.id === id) return { ...el, ...patch };
+    if (el.children) return { ...el, children: updateSceneElementDeep(el.children, id, patch) };
+    return el;
+  });
+}
+
+/** Remove a scene element anywhere in the tree */
+function removeSceneElementDeep(elements: SceneElement[], id: string): SceneElement[] {
+  return elements
+    .filter((el) => el.id !== id)
+    .map((el) => {
+      if (el.children) return { ...el, children: removeSceneElementDeep(el.children, id) };
+      return el;
+    });
+}
+
+/** Update element timing anywhere in the tree */
+function updateSceneTimingDeep(elements: SceneElement[], id: string, timing: Partial<ElementTiming>): SceneElement[] {
+  return elements.map((el) => {
+    if (el.id === id) return { ...el, timing: { ...el.timing, ...timing } };
+    if (el.children) return { ...el, children: updateSceneTimingDeep(el.children, id, timing) };
+    return el;
+  });
+}
+
+/** Add a scene element into a group (or top-level if groupId is null) */
+function addSceneElementToGroup(elements: SceneElement[], groupId: string | null, newEl: SceneElement): SceneElement[] {
+  if (!groupId) return [...elements, newEl];
+  return elements.map((el) => {
+    if (el.id === groupId && el.type === "group") {
+      return { ...el, children: [...(el.children as SceneElement[] ?? []), newEl] };
+    }
+    if (el.children) return { ...el, children: addSceneElementToGroup(el.children, groupId, newEl) };
+    return el;
+  });
+}
+
+/** Extract a scene element from the tree (remove + return it) */
+function extractSceneElement(elements: SceneElement[], id: string): { tree: SceneElement[]; extracted: SceneElement | null } {
+  for (let i = 0; i < elements.length; i++) {
+    if (elements[i].id === id) {
+      return { tree: [...elements.slice(0, i), ...elements.slice(i + 1)], extracted: elements[i] };
+    }
+  }
+  for (let i = 0; i < elements.length; i++) {
+    if (elements[i].children) {
+      const result = extractSceneElement(elements[i].children!, id);
+      if (result.extracted) {
+        const updated = [...elements];
+        updated[i] = { ...updated[i], children: result.tree };
+        return { tree: updated, extracted: result.extracted };
+      }
+    }
+  }
+  return { tree: elements, extracted: null };
+}
+
+/** Collect all elements recursively (for flat iteration) */
+export function flattenSceneElements(elements: SceneElement[]): SceneElement[] {
+  const result: SceneElement[] = [];
+  for (const el of elements) {
+    result.push(el);
+    if (el.children) result.push(...flattenSceneElements(el.children));
+  }
+  return result;
+}
+
 /** Insert an element at a specific index within a parent (null = top-level) */
 function insertElement(
   elements: SlideElement[],
@@ -561,7 +645,10 @@ interface LumvasStore {
   addSceneElement: (sceneId: string, element: SceneElement) => void;
   updateSceneElement: (sceneId: string, elementId: string, patch: Partial<SceneElement>) => void;
   removeSceneElement: (sceneId: string, elementId: string) => void;
+  reorderSceneElements: (sceneId: string, from: number, to: number) => void;
   updateElementTiming: (sceneId: string, elementId: string, timing: Partial<ElementTiming>) => void;
+  addSceneElementToGroup: (sceneId: string, groupId: string | null, element: SceneElement) => void;
+  moveSceneElementToGroup: (sceneId: string, elementId: string, targetGroupId: string | null) => void;
 
   // Video mode: Audio tracks
   addAudioTrack: (track: AudioTrack) => void;
@@ -920,7 +1007,7 @@ export const useLumvasStore = create<LumvasStore>((_set, get) => {
         ...vc,
         scenes: vc.scenes.map((sc) =>
           sc.id === sceneId
-            ? { ...sc, elements: sc.elements.map((el) => el.id === elementId ? { ...el, ...patch } : el) }
+            ? { ...sc, elements: updateSceneElementDeep(sc.elements, elementId, patch) }
             : sc,
         ),
       },
@@ -933,8 +1020,24 @@ export const useLumvasStore = create<LumvasStore>((_set, get) => {
       content: {
         ...vc,
         scenes: vc.scenes.map((sc) =>
-          sc.id === sceneId ? { ...sc, elements: sc.elements.filter((el) => el.id !== elementId) } : sc,
+          sc.id === sceneId ? { ...sc, elements: removeSceneElementDeep(sc.elements, elementId) } : sc,
         ),
+      },
+    });
+  },
+
+  reorderSceneElements: (sceneId, from, to) => {
+    const vc = get().content as VideoContentNode;
+    set({
+      content: {
+        ...vc,
+        scenes: vc.scenes.map((sc) => {
+          if (sc.id !== sceneId) return sc;
+          const elements = [...sc.elements];
+          const [moved] = elements.splice(from, 1);
+          elements.splice(to, 0, moved);
+          return { ...sc, elements };
+        }),
       },
     });
   },
@@ -946,14 +1049,38 @@ export const useLumvasStore = create<LumvasStore>((_set, get) => {
         ...vc,
         scenes: vc.scenes.map((sc) =>
           sc.id === sceneId
-            ? {
-                ...sc,
-                elements: sc.elements.map((el) =>
-                  el.id === elementId ? { ...el, timing: { ...el.timing, ...timing } } : el,
-                ),
-              }
+            ? { ...sc, elements: updateSceneTimingDeep(sc.elements, elementId, timing) }
             : sc,
         ),
+      },
+    });
+  },
+
+  addSceneElementToGroup: (sceneId, groupId, element) => {
+    const vc = get().content as VideoContentNode;
+    set({
+      content: {
+        ...vc,
+        scenes: vc.scenes.map((sc) =>
+          sc.id === sceneId
+            ? { ...sc, elements: addSceneElementToGroup(sc.elements, groupId, element) }
+            : sc,
+        ),
+      },
+    });
+  },
+
+  moveSceneElementToGroup: (sceneId, elementId, targetGroupId) => {
+    const vc = get().content as VideoContentNode;
+    const scene = vc.scenes.find((sc) => sc.id === sceneId);
+    if (!scene) return;
+    const { tree, extracted } = extractSceneElement(scene.elements, elementId);
+    if (!extracted) return;
+    const newElements = addSceneElementToGroup(tree, targetGroupId, extracted);
+    set({
+      content: {
+        ...vc,
+        scenes: vc.scenes.map((sc) => sc.id === sceneId ? { ...sc, elements: newElements } : sc),
       },
     });
   },

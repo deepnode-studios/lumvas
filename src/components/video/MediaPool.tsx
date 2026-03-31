@@ -34,6 +34,8 @@ export function MediaPool() {
   const assets = useLumvasStore((s) => s.assets.items);
   const addAsset = useLumvasStore((s) => s.addAsset);
   const removeAsset = useLumvasStore((s) => s.removeAsset);
+  const updateAsset = useLumvasStore((s) => s.updateAsset);
+  const [editingAssetId, setEditingAssetId] = useState<string | null>(null);
   const vc = useLumvasStore((s) => selectVideoContent(s));
   const addAudioTrack = useLumvasStore((s) => s.addAudioTrack);
   const removeAudioTrack = useLumvasStore((s) => s.removeAudioTrack);
@@ -165,29 +167,58 @@ export function MediaPool() {
               <div className={styles.grid}>
                 {assets.map((asset) => {
                   const src = resolveMediaSrc(asset.data, projectDir);
+                  const isEditing = editingAssetId === asset.id;
                   return (
-                    <div
-                      key={asset.id}
-                      className={styles.mediaItem}
-                      draggable
-                      onDragStart={(e) => handleDragStartImage(e, asset)}
-                      title={`Drag "${asset.label}" to add to scene`}
-                    >
-                      {asset.data ? (
-                        <img src={src} alt={asset.label} className={styles.mediaThumb} />
-                      ) : (
-                        <div className={styles.mediaPlaceholder}>?</div>
-                      )}
-                      <span className={styles.mediaLabel}>{asset.label}</span>
-                      <button
-                        className={styles.removeBtn}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removeAsset(asset.id);
-                        }}
+                    <div key={asset.id}>
+                      <div
+                        className={styles.mediaItem}
+                        draggable={!isEditing}
+                        onDragStart={(e) => handleDragStartImage(e, asset)}
+                        onClick={() => setEditingAssetId(isEditing ? null : asset.id)}
+                        title={`Drag "${asset.label}" to add to scene. Click to edit.`}
                       >
-                        ×
-                      </button>
+                        {asset.data ? (
+                          <img src={src} alt={asset.label} className={styles.mediaThumb} draggable={false} />
+                        ) : (
+                          <div className={styles.mediaPlaceholder}>?</div>
+                        )}
+                        <span className={styles.mediaLabel}>
+                          {asset.label}
+                          {asset.tintable && <span style={{ color: "#a78bfa", marginLeft: 4, fontSize: 9 }}>TINT</span>}
+                        </span>
+                        <button
+                          className={styles.removeBtn}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeAsset(asset.id);
+                          }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                      {isEditing && (
+                        <div style={{ padding: "6px 8px", background: "#1a1a1e", borderRadius: "0 0 6px 6px", marginTop: -2, marginBottom: 6, fontSize: 11 }}>
+                          <div style={{ marginBottom: 4 }}>
+                            <input
+                              type="text"
+                              value={asset.label}
+                              onChange={(e) => updateAsset(asset.id, { label: e.target.value })}
+                              placeholder="Label"
+                              style={{ width: "100%", fontSize: 11, padding: "3px 6px", background: "#2a2a2e", border: "1px solid #3a3a3e", borderRadius: 3, color: "#ddd" }}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          </div>
+                          <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", color: "#aaa" }}>
+                            <input
+                              type="checkbox"
+                              checked={asset.tintable ?? false}
+                              onChange={(e) => { e.stopPropagation(); updateAsset(asset.id, { tintable: e.target.checked }); }}
+                            />
+                            Tintable (colorize monochrome assets)
+                          </label>
+                          <div style={{ color: "#555", fontSize: 10, marginTop: 4 }}>ID: {asset.id}</div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -301,6 +332,7 @@ function ScenesPanel() {
   const theme = useLumvasStore((s) => s.theme);
   const assets = useLumvasStore((s) => s.assets.items);
   const size = useLumvasStore((s) => s.documentSize);
+  const language = useLumvasStore((s) => s.language);
   const projectDir = useFileStore((s) => s.currentFilePath);
   const editingSceneId = useTimelineStore((s) => s.editingSceneId);
   const addScene = useLumvasStore((s) => s.addScene);
@@ -332,6 +364,7 @@ function ScenesPanel() {
                   assets={assets}
                   size={size}
                   projectDir={projectDir}
+                  language={language}
                 />
               </div>
               <div className={styles.sceneCardInfo}>

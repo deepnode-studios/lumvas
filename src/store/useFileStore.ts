@@ -142,16 +142,17 @@ export const useFileStore = create<FileStore>((set, get) => ({
   },
 
   saveAs: async () => {
-    const { open } = await import("@tauri-apps/plugin-dialog");
-    // User picks a directory location, we create the .lumvas folder
-    const parentDir = await open({
-      directory: true,
-      title: "Choose location for project folder",
-      defaultPath: getLastDialogPath(),
+    const { save: saveDialog } = await import("@tauri-apps/plugin-dialog");
+    // User picks a file name and location
+    const filePath = await saveDialog({
+      title: "Save project as",
+      defaultPath: getLastDialogPath() ? `${getLastDialogPath()}/project.lumvas` : "project.lumvas",
+      filters: [{ name: "Lumvas Project", extensions: ["lumvas"] }],
     });
-    if (!parentDir) return;
-    setLastDialogPath(parentDir as string);
-    const projectDir = `${parentDir}/untitled.lumvas`;
+    if (!filePath) return;
+    // Ensure .lumvas extension
+    const projectDir = (filePath as string).endsWith(".lumvas") ? (filePath as string) : `${filePath}.lumvas`;
+    setLastDialogPath(projectDir.substring(0, projectDir.lastIndexOf("/")));
     try {
       const doc = useLumvasStore.getState().getDocument();
       await saveProject(projectDir, doc);

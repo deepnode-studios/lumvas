@@ -258,7 +258,6 @@ export function SceneEditor() {
       content: type === "text" ? "New Text" : "",
       timing: {
         enterMs: 0,
-        enterAnimation: { preset: "fade-in", durationMs: 500 },
       },
     };
     addSceneElement(scene.id, el);

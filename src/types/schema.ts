@@ -391,9 +391,12 @@ export interface SceneElement extends SlideElement {
   timing: ElementTiming;
   children?: SceneElement[];
 
-  // Absolute positioning within the scene (percentage 0–100 of scene dimensions)
+  // Absolute positioning within the scene (pixels)
   x?: number;
   y?: number;
+  // Anchor point (0 = left/top, 0.5 = center, 1 = right/bottom)
+  anchorX?: number;
+  anchorY?: number;
   // Explicit size override (percentage of scene dimensions, or "auto")
   sceneWidth?: string;   // e.g. "50%", "auto", "200px"
   sceneHeight?: string;

@@ -301,19 +301,27 @@ pub async fn mix_audio(
         let label = format!("a{}", i);
         let mut filter_parts = Vec::new();
 
+        // Volume adjustment
         if (track.volume - 1.0).abs() > 0.01 {
             filter_parts.push(format!("volume={:.2}", track.volume));
         }
-        if delay_ms > 0.0 {
-            filter_parts.push(format!("adelay={}|{}", delay_ms as i64, delay_ms as i64));
-        }
+        // Fade-in (before delay — operates on trimmed audio timeline)
         if track.fade_in_ms > 0.0 {
             filter_parts.push(format!("afade=t=in:d={:.3}", track.fade_in_ms / 1000.0));
         }
+        // Fade-out (before delay — operates on trimmed audio timeline)
         if track.fade_out_ms > 0.0 {
-            let total_sec = total_duration_ms / 1000.0;
-            let fade_start = total_sec - track.fade_out_ms / 1000.0;
+            let track_dur = if let Some(te) = track.trim_end_ms {
+                (te - track.trim_start_ms) / 1000.0
+            } else {
+                total_duration_ms / 1000.0
+            };
+            let fade_start = (track_dur - track.fade_out_ms / 1000.0).max(0.0);
             filter_parts.push(format!("afade=t=out:st={:.3}:d={:.3}", fade_start, track.fade_out_ms / 1000.0));
+        }
+        // Delay LAST — positions the processed audio on the video timeline
+        if delay_ms > 0.0 {
+            filter_parts.push(format!("adelay={}|{}", delay_ms as i64, delay_ms as i64));
         }
 
         if filter_parts.is_empty() {
@@ -325,16 +333,21 @@ pub async fn mix_audio(
     }
 
     let mix_filter = format!(
-        "{}amix=inputs={}:duration=longest",
+        "{}amix=inputs={}:duration=longest:normalize=0",
         mix_inputs.join(""),
         tracks.len()
     );
     filters.push(mix_filter);
 
     let filter_complex = filters.join(";");
-    args.extend(["-filter_complex".into(), filter_complex]);
+    args.extend(["-filter_complex".into(), filter_complex.clone()]);
     args.extend(["-c:a".into(), "aac".into(), "-b:a".into(), "192k".into()]);
     args.push(output_path.clone());
+
+    eprintln!("[mix_audio] {} tracks, filter_complex length: {}", tracks.len(), filter_complex.len());
+    for (i, track) in tracks.iter().enumerate() {
+        eprintln!("[mix_audio] track {}: vol={} delay={}ms trim={}-{:?}", i, track.volume, track.start_ms, track.trim_start_ms, track.trim_end_ms);
+    }
 
     let output = run_ffmpeg_binary(&app, "ffmpeg", &args).await?;
 

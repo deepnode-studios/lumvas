@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from "react";
-import { useLumvasStore, selectVideoContent } from "@/store/useLumvasStore";
+import { useLumvasStore, selectVideoContent, findSceneElementDeep } from "@/store/useLumvasStore";
 import { EFFECT_DEFINITIONS, EFFECT_CATEGORIES, EFFECT_COMBOS } from "@/data/effectsLibrary";
 import type { Effect, EffectParamValue, Keyframe, KeyframeProperties, EffectDefinition } from "@/types/schema";
 import styles from "./effectsLibrary.module.css";
@@ -432,7 +432,7 @@ export function EffectsLibrary({ onClose }: { onClose: () => void }) {
     return vc.scenes.find((s) => s.id === activeSceneId) ?? null;
   })();
 
-  const activeElement = activeScene?.elements.find((e) => e.id === activeElementId) ?? null;
+  const activeElement = activeScene && activeElementId ? findSceneElementDeep(activeScene.elements, activeElementId) : null;
   const effects = activeElement?.timing.effects ?? [];
 
   const addEffect = useCallback((def: EffectDefinition) => {

@@ -45,6 +45,7 @@ export async function confirmExport() {
     const sep = baseTemp.endsWith("/") ? "" : "/";
 
     const theme = store.theme;
+    const language = store.language;
     const assets = store.assets.items;
     const size = { ...store.documentSize, width: renderWidth, height: renderHeight };
     const projectDir = (await import("@/store/useFileStore")).useFileStore.getState().currentFilePath;
@@ -163,7 +164,7 @@ export async function confirmExport() {
       if (!scene) continue;
 
       // Render directly to canvas — <5ms per frame
-      renderSceneToCanvas(ctx, scene, theme, assets, originalSize, projectDir, sceneTimeMs);
+      renderSceneToCanvas(ctx, scene, theme, assets, originalSize, projectDir, sceneTimeMs, language);
 
       // Scene transition: if within the transition window of the NEXT scene, composite
       if (
@@ -185,7 +186,7 @@ export async function confirmExport() {
           tempCanvas.height = renderHeight;
           const tempCtx = tempCanvas.getContext("2d")!;
           if (exportScale !== 1) tempCtx.scale(exportScale, exportScale);
-          renderSceneToCanvas(tempCtx, nextScene, theme, assets, originalSize, projectDir, Math.max(0, nextSceneTimeMs));
+          renderSceneToCanvas(tempCtx, nextScene, theme, assets, originalSize, projectDir, Math.max(0, nextSceneTimeMs), language);
           applySceneTransition(ctx, tempCanvas, scene.transition, progress, renderWidth, renderHeight);
         }
       }

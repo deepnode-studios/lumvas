@@ -11,11 +11,12 @@ interface Props {
   assets: AssetItem[];
   size: DocumentSize;
   projectDir?: string | null;
+  language?: string;
   /** Scene-relative time to render (defaults to midpoint) */
   atMs?: number;
 }
 
-export function SceneThumbnail({ scene, theme, assets, size, projectDir, atMs }: Props) {
+export function SceneThumbnail({ scene, theme, assets, size, projectDir, language, atMs }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const renderScheduled = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -32,7 +33,7 @@ export function SceneThumbnail({ scene, theme, assets, size, projectDir, atMs }:
       // Render at thumb size using canvas scale
       ctx.save();
       ctx.scale(THUMB_W / size.width, THUMB_H / size.height);
-      renderSceneToCanvas(ctx, scene, theme, assets, size, projectDir ?? null, sceneTime);
+      renderSceneToCanvas(ctx, scene, theme, assets, size, projectDir ?? null, sceneTime, language);
       ctx.restore();
     }, 250);
     return () => { if (renderScheduled.current) clearTimeout(renderScheduled.current); };

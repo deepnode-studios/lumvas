@@ -1,11 +1,13 @@
 import { useState } from "react";
-import { useLumvasStore, selectVideoContent } from "@/store/useLumvasStore";
+import { useLumvasStore, selectVideoContent, DOCUMENT_SIZES, FONT_OPTIONS, findSceneElementDeep, flattenSceneElements } from "@/store/useLumvasStore";
 import { useTimelineStore, getSceneAtTime, getSceneStartMs, type InspectorTarget } from "@/store/useTimelineStore";
 import type {
   SceneElement, AudioTrackType, CaptionStyle,
   CaptionTrack, CaptionSegment, AudioTrack, VideoScene,
 } from "@/types/schema";
 import { getEffectDefinition, EFFECT_DEFINITIONS } from "@/data/effectsLibrary";
+import { ColorPicker } from "@/components/ColorPicker";
+import { GradientEditor } from "@/components/GradientEditor";
 import styles from "./videoWorkspace.module.css";
 
 function uid(): string {
@@ -44,6 +46,46 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   return <h3 className={styles.panelTitle}>{children}</h3>;
 }
 
+/* ===== ELEMENT TREE (recursive list) ===== */
+
+function ElementTree({ elements, sceneId, depth }: { elements: SceneElement[]; sceneId: string; depth: number }) {
+  return (
+    <>
+      {elements.map((el) => (
+        <div key={el.id}>
+          <div
+            style={{
+              padding: "6px 8px",
+              paddingLeft: 8 + depth * 14,
+              fontSize: 11,
+              color: "#aaa",
+              borderRadius: 4,
+              cursor: "pointer",
+              marginBottom: 2,
+              background: "#2a2a2e",
+            }}
+            onClick={() => {
+              useLumvasStore.getState().setActiveScene(sceneId);
+              useLumvasStore.getState().setActiveElement(el.id);
+              useTimelineStore.getState().setInspectorTarget({ type: "element", sceneId, elementId: el.id });
+            }}
+          >
+            <span style={{ color: el.type === "group" ? "#a78bfa" : "#4ecdc4", fontWeight: 600, marginRight: 6 }}>
+              {el.type === "group" ? "⊞ group" : el.type}
+            </span>
+            {el.type === "group"
+              ? `(${(el.children ?? []).length} children)`
+              : (el.content?.slice(0, 20) || "(empty)")}
+          </div>
+          {el.type === "group" && el.children && el.children.length > 0 && (
+            <ElementTree elements={el.children as SceneElement[]} sceneId={sceneId} depth={depth + 1} />
+          )}
+        </div>
+      ))}
+    </>
+  );
+}
+
 /* ===== SCENE INSPECTOR ===== */
 
 function SceneInspector({ scene, sceneIndex }: { scene: VideoScene; sceneIndex: number }) {
@@ -52,12 +94,15 @@ function SceneInspector({ scene, sceneIndex }: { scene: VideoScene; sceneIndex: 
   const removeScene = useLumvasStore((s) => s.removeScene);
   const addSceneElement = useLumvasStore((s) => s.addSceneElement);
   const vc = useLumvasStore((s) => selectVideoContent(s));
+  const documentSize = useLumvasStore((s) => s.documentSize);
+  const setDocumentSize = useLumvasStore((s) => s.setDocumentSize);
 
-  const handleAddElement = (type: "text" | "image" | "icon" | "divider" | "spacer" | "counter" | "path" | "svg" | "indicator") => {
+  const handleAddElement = (type: "text" | "image" | "icon" | "divider" | "spacer" | "counter" | "path" | "svg" | "indicator" | "group") => {
     const defaults: Record<string, object> = {
       counter: { counterStart: 0, counterEnd: 100, fontSize: 64, fontWeight: 700 },
       path: { pathStrokeWidth: 3, pathLinecap: "round" },
       indicator: { indicatorRadius: 40, pathStrokeWidth: 3 },
+      group: { direction: "row", alignItems: "center", justifyContent: "center", gap: 12, children: [] },
     };
     addSceneElement(scene.id, {
       id: uid(),
@@ -65,15 +110,6 @@ function SceneInspector({ scene, sceneIndex }: { scene: VideoScene; sceneIndex: 
       content: type === "text" ? "New Text" : type === "path" ? "M 0 0 L 200 0" : type === "svg" ? '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" fill="currentColor"/></svg>' : "",
       timing: {
         enterMs: 0,
-        effects: [{
-          id: uid(),
-          definitionId: "fade-in",
-          trigger: "enter" as const,
-          durationMs: 500,
-          delayMs: 0,
-          enabled: true,
-          params: { durationMs: 500, easing: "ease-out" },
-        }],
       },
       ...(defaults[type] ?? {}),
     });
@@ -150,57 +186,84 @@ function SceneInspector({ scene, sceneIndex }: { scene: VideoScene; sceneIndex: 
       <div className={styles.panelSection}>
         <SectionTitle>Background</SectionTitle>
         <Row label="Color">
-          <input
-            type="color"
-            value={scene.style?.backgroundColor ?? "#000000"}
-            onChange={(e) => updateScene(scene.id, { style: { ...scene.style, backgroundColor: e.target.value } })}
-            style={{ width: 28, height: 22, padding: 0, border: "1px solid #3a3a3e", borderRadius: 3, cursor: "pointer" }}
-          />
-          <input
-            type="text"
-            value={scene.style?.backgroundColor ?? ""}
-            onChange={(e) => updateScene(scene.id, { style: { ...scene.style, backgroundColor: e.target.value } })}
-            placeholder="#000000"
-            style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
+          <ColorPicker
+            value={scene.style?.backgroundColor}
+            onChange={(v) => updateScene(scene.id, { style: { ...scene.style, backgroundColor: v ?? "#000000" } })}
           />
         </Row>
         <Row label="Gradient">
-          <input
-            type="text"
+          <GradientEditor
             value={scene.style?.backgroundGradient ?? ""}
-            onChange={(e) => updateScene(scene.id, { style: { ...scene.style, backgroundGradient: e.target.value || undefined } })}
-            placeholder="linear-gradient(...)"
-            style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
+            onChange={(v) => updateScene(scene.id, { style: { ...scene.style, backgroundGradient: v || undefined } })}
           />
         </Row>
         <Row label="Primary">
-          <input
-            type="color"
-            value={scene.style?.primaryColor ?? useLumvasStore.getState().theme.primaryColor}
-            onChange={(e) => updateScene(scene.id, { style: { ...scene.style, primaryColor: e.target.value } })}
-            style={{ width: 28, height: 22, padding: 0, border: "1px solid #3a3a3e", borderRadius: 3, cursor: "pointer" }}
-          />
-          <input
-            type="text"
-            value={scene.style?.primaryColor ?? ""}
-            onChange={(e) => updateScene(scene.id, { style: { ...scene.style, primaryColor: e.target.value } })}
-            placeholder="theme default"
-            style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
+          <ColorPicker
+            value={scene.style?.primaryColor}
+            onChange={(v) => updateScene(scene.id, { style: { ...scene.style, primaryColor: v } })}
+            allowNone
+            noneLabel="Theme default"
           />
         </Row>
         <Row label="Secondary">
-          <input
-            type="color"
-            value={scene.style?.secondaryColor ?? useLumvasStore.getState().theme.secondaryColor}
-            onChange={(e) => updateScene(scene.id, { style: { ...scene.style, secondaryColor: e.target.value } })}
-            style={{ width: 28, height: 22, padding: 0, border: "1px solid #3a3a3e", borderRadius: 3, cursor: "pointer" }}
+          <ColorPicker
+            value={scene.style?.secondaryColor}
+            onChange={(v) => updateScene(scene.id, { style: { ...scene.style, secondaryColor: v } })}
+            allowNone
+            noneLabel="Theme default"
           />
-          <input
-            type="text"
-            value={scene.style?.secondaryColor ?? ""}
-            onChange={(e) => updateScene(scene.id, { style: { ...scene.style, secondaryColor: e.target.value } })}
-            placeholder="theme default"
+        </Row>
+      </div>
+
+      {/* Composition dimensions */}
+      <div className={styles.panelSection}>
+        <SectionTitle>Composition</SectionTitle>
+        <Row label="Preset">
+          <select
+            value={DOCUMENT_SIZES.some((s) => s.width === documentSize.width && s.height === documentSize.height) ? `${documentSize.width}x${documentSize.height}` : "custom"}
+            onChange={(e) => {
+              if (e.target.value === "custom") return;
+              const picked = DOCUMENT_SIZES.find(
+                (s) => `${s.width}x${s.height}` === e.target.value
+              );
+              if (picked) setDocumentSize(picked);
+            }}
             style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
+          >
+            {DOCUMENT_SIZES.map((s) => (
+              <option key={`${s.width}x${s.height}`} value={`${s.width}x${s.height}`}>
+                {s.label}
+              </option>
+            ))}
+            {!DOCUMENT_SIZES.some((s) => s.width === documentSize.width && s.height === documentSize.height) && (
+              <option value="custom">Custom ({documentSize.width}×{documentSize.height})</option>
+            )}
+          </select>
+        </Row>
+        <Row label="Width">
+          <input
+            type="number"
+            value={documentSize.width}
+            min={320}
+            max={3840}
+            step={10}
+            onChange={(e) =>
+              setDocumentSize({ ...documentSize, width: Number(e.target.value), label: "Custom" })
+            }
+            style={{ width: 80, fontSize: 11, padding: "3px 6px" }}
+          />
+        </Row>
+        <Row label="Height">
+          <input
+            type="number"
+            value={documentSize.height}
+            min={320}
+            max={3840}
+            step={10}
+            onChange={(e) =>
+              setDocumentSize({ ...documentSize, height: Number(e.target.value), label: "Custom" })
+            }
+            style={{ width: 80, fontSize: 11, padding: "3px 6px" }}
           />
         </Row>
       </div>
@@ -228,7 +291,7 @@ function SceneInspector({ scene, sceneIndex }: { scene: VideoScene; sceneIndex: 
       <div className={styles.panelSection}>
         <SectionTitle>Add Element</SectionTitle>
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-          {(["text", "image", "icon", "divider", "spacer", "counter", "path", "svg", "indicator"] as const).map((type) => (
+          {(["text", "image", "icon", "group", "divider", "spacer", "counter", "path", "svg", "indicator"] as const).map((type) => (
             <button
               key={type}
               style={{ padding: "5px 10px", fontSize: 11, fontWeight: 500, color: "#aaa", background: "#2a2a2e", border: "1px solid #3a3a3e", borderRadius: 4, cursor: "pointer" }}
@@ -242,20 +305,8 @@ function SceneInspector({ scene, sceneIndex }: { scene: VideoScene; sceneIndex: 
 
       {/* Element list */}
       <div className={styles.panelSection}>
-        <SectionTitle>Elements ({scene.elements.length})</SectionTitle>
-        {scene.elements.map((el) => (
-          <div
-            key={el.id}
-            style={{ padding: "6px 8px", fontSize: 11, color: "#aaa", borderRadius: 4, cursor: "pointer", marginBottom: 2, background: "#2a2a2e" }}
-            onClick={() => {
-              useLumvasStore.getState().setActiveElement(el.id);
-              useTimelineStore.getState().setInspectorTarget({ type: "element", sceneId: scene.id, elementId: el.id });
-            }}
-          >
-            <span style={{ color: "#4ecdc4", fontWeight: 600, marginRight: 6 }}>{el.type}</span>
-            {el.content?.slice(0, 20) || "(empty)"}
-          </div>
-        ))}
+        <SectionTitle>Elements ({flattenSceneElements(scene.elements).length})</SectionTitle>
+        <ElementTree elements={scene.elements} sceneId={scene.id} depth={0} />
       </div>
     </>
   );
@@ -268,10 +319,18 @@ function ElementInspector({ sceneId, elementId }: { sceneId: string; elementId: 
   const updateSceneElement = useLumvasStore((s) => s.updateSceneElement);
   const updateElementTiming = useLumvasStore((s) => s.updateElementTiming);
   const removeSceneElement = useLumvasStore((s) => s.removeSceneElement);
+  const addSceneElementToGroup = useLumvasStore((s) => s.addSceneElementToGroup);
+  const moveSceneElementToGroup = useLumvasStore((s) => s.moveSceneElementToGroup);
+  const documentSize = useLumvasStore((s) => s.documentSize);
 
   const scene = vc.scenes.find((s) => s.id === sceneId);
-  const el = scene?.elements.find((e) => e.id === elementId);
+  const el = scene ? findSceneElementDeep(scene.elements, elementId) : null;
   if (!scene || !el) return <EmptyInspector message="Element not found" />;
+
+  // Find all groups in this scene (for "move to group" dropdown)
+  const allGroups = flattenSceneElements(scene.elements).filter(
+    (e) => e.type === "group" && e.id !== elementId
+  );
 
   return (
     <>
@@ -299,9 +358,23 @@ function ElementInspector({ sceneId, elementId }: { sceneId: string; elementId: 
                 style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
               >
                 <option value="">Theme default</option>
-                {vc.scenes.length > 0 && useLumvasStore.getState().theme.fonts.map((f) => (
-                  <option key={f.id} value={f.id}>{f.label}</option>
-                ))}
+                {useLumvasStore.getState().theme.fonts.length > 0 && (
+                  <optgroup label="Theme Fonts">
+                    {useLumvasStore.getState().theme.fonts.map((f) => (
+                      <option key={f.id} value={f.id}>{f.label} — {f.value.split(",")[0]}</option>
+                    ))}
+                  </optgroup>
+                )}
+                <optgroup label="System">
+                  {FONT_OPTIONS.filter((f) => f.category === "system").map((f) => (
+                    <option key={f.value} value={f.value}>{f.label}</option>
+                  ))}
+                </optgroup>
+                <optgroup label="Google Fonts">
+                  {FONT_OPTIONS.filter((f) => f.category === "google").map((f) => (
+                    <option key={f.value} value={f.value}>{f.label}</option>
+                  ))}
+                </optgroup>
               </select>
             </Row>
             <Row label="Font Size">
@@ -324,18 +397,11 @@ function ElementInspector({ sceneId, elementId }: { sceneId: string; elementId: 
               </select>
             </Row>
             <Row label="Color">
-              <input
-                type="color"
-                value={el.color || "#ffffff"}
-                onChange={(e) => updateSceneElement(sceneId, el.id, { color: e.target.value })}
-                style={{ width: 28, height: 22, padding: 0, border: "1px solid #3a3a3e", borderRadius: 3, cursor: "pointer" }}
-              />
-              <input
-                type="text"
-                value={el.color ?? ""}
-                onChange={(e) => updateSceneElement(sceneId, el.id, { color: e.target.value })}
-                placeholder="theme default"
-                style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
+              <ColorPicker
+                value={el.color}
+                onChange={(v) => updateSceneElement(sceneId, el.id, { color: v })}
+                allowNone
+                noneLabel="Theme default"
               />
             </Row>
             <Row label="Align">
@@ -386,7 +452,7 @@ function ElementInspector({ sceneId, elementId }: { sceneId: string; elementId: 
               <input type="number" value={el.fontSize ?? 64} onChange={(e) => updateSceneElement(sceneId, el.id, { fontSize: Number(e.target.value) })} style={{ width: 60, fontSize: 11, padding: "3px 6px" }} />
             </Row>
             <Row label="Color">
-              <input type="color" value={el.color || "#ffffff"} onChange={(e) => updateSceneElement(sceneId, el.id, { color: e.target.value })} style={{ width: 28, height: 22, padding: 0, border: "1px solid #3a3a3e", borderRadius: 3, cursor: "pointer" }} />
+              <ColorPicker value={el.color} onChange={(v) => updateSceneElement(sceneId, el.id, { color: v })} allowNone noneLabel="Theme default" />
             </Row>
           </>
         )}
@@ -403,7 +469,7 @@ function ElementInspector({ sceneId, elementId }: { sceneId: string; elementId: 
               />
             </Row>
             <Row label="Stroke">
-              <input type="color" value={el.pathStroke || "#ffffff"} onChange={(e) => updateSceneElement(sceneId, el.id, { pathStroke: e.target.value })} style={{ width: 28, height: 22, padding: 0, border: "1px solid #3a3a3e", borderRadius: 3, cursor: "pointer" }} />
+              <ColorPicker value={el.pathStroke} onChange={(v) => updateSceneElement(sceneId, el.id, { pathStroke: v })} />
             </Row>
             <Row label="Width">
               <input type="number" min={0.5} step={0.5} value={el.pathStrokeWidth ?? 2} onChange={(e) => updateSceneElement(sceneId, el.id, { pathStrokeWidth: Number(e.target.value) })} style={{ width: 60, fontSize: 11, padding: "3px 6px" }} />
@@ -450,7 +516,7 @@ function ElementInspector({ sceneId, elementId }: { sceneId: string; elementId: 
               <span style={{ color: "#555", fontSize: 10 }}>px</span>
             </Row>
             <Row label="Color">
-              <input type="color" value={el.indicatorColor || el.color || "#ffffff"} onChange={(e) => updateSceneElement(sceneId, el.id, { indicatorColor: e.target.value })} style={{ width: 28, height: 22, padding: 0, border: "1px solid #3a3a3e", borderRadius: 3, cursor: "pointer" }} />
+              <ColorPicker value={el.indicatorColor ?? el.color} onChange={(v) => updateSceneElement(sceneId, el.id, { indicatorColor: v })} />
             </Row>
             <Row label="Stroke W">
               <input type="number" min={1} max={20} value={el.pathStrokeWidth ?? 3} onChange={(e) => updateSceneElement(sceneId, el.id, { pathStrokeWidth: Number(e.target.value) })} style={{ width: 60, fontSize: 11, padding: "3px 6px" }} />
@@ -507,11 +573,210 @@ function ElementInspector({ sceneId, elementId }: { sceneId: string; elementId: 
             </Row>
           </>
         )}
+
+        {/* Logo */}
+        {el.type === "logo" && (
+          <>
+            <Row label="Asset">
+              <select
+                value={el.assetId ?? ""}
+                onChange={(e) => updateSceneElement(sceneId, el.id, { assetId: e.target.value || undefined })}
+                style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
+              >
+                <option value="">First asset</option>
+                {useLumvasStore.getState().assets.items.map((a) => (
+                  <option key={a.id} value={a.id}>{a.label}{a.tintable ? " (tintable)" : ""}</option>
+                ))}
+              </select>
+            </Row>
+            {(() => {
+              const asset = el.assetId ? useLumvasStore.getState().assets.items.find((a) => a.id === el.assetId) : useLumvasStore.getState().assets.items[0];
+              return asset?.tintable ? (
+                <Row label="Tint Color">
+                  <ColorPicker
+                    value={el.color}
+                    onChange={(v) => updateSceneElement(sceneId, el.id, { color: v })}
+                    allowNone
+                    noneLabel="Theme primary"
+                  />
+                </Row>
+              ) : null;
+            })()}
+            <Row label="Max Width">
+              <input type="text" value={el.maxWidth ?? "120px"} onChange={(e) => updateSceneElement(sceneId, el.id, { maxWidth: e.target.value })} style={{ flex: 1, fontSize: 11, padding: "3px 6px" }} />
+            </Row>
+            <Row label="Height">
+              <input type="text" value={el.height ?? "80px"} onChange={(e) => updateSceneElement(sceneId, el.id, { height: e.target.value })} style={{ flex: 1, fontSize: 11, padding: "3px 6px" }} />
+            </Row>
+          </>
+        )}
       </div>
 
-      {/* Position */}
+      {/* Group layout controls */}
+      {el.type === "group" && (
+        <div className={styles.panelSection}>
+          <SectionTitle>Group Layout</SectionTitle>
+          <Row label="Direction">
+            <select
+              value={el.direction ?? "row"}
+              onChange={(e) => updateSceneElement(sceneId, el.id, { direction: e.target.value as any })}
+              style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
+            >
+              <option value="row">Row</option>
+              <option value="column">Column</option>
+            </select>
+          </Row>
+          <Row label="Align">
+            <select
+              value={el.alignItems ?? "center"}
+              onChange={(e) => updateSceneElement(sceneId, el.id, { alignItems: e.target.value as any })}
+              style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
+            >
+              <option value="flex-start">Start</option>
+              <option value="center">Center</option>
+              <option value="flex-end">End</option>
+            </select>
+          </Row>
+          <Row label="Justify">
+            <select
+              value={el.justifyContent ?? "flex-start"}
+              onChange={(e) => updateSceneElement(sceneId, el.id, { justifyContent: e.target.value as any })}
+              style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
+            >
+              <option value="flex-start">Start</option>
+              <option value="center">Center</option>
+              <option value="flex-end">End</option>
+              <option value="space-between">Space Between</option>
+              <option value="space-evenly">Space Evenly</option>
+            </select>
+          </Row>
+          <Row label="Gap">
+            <input type="number" value={el.gap ?? 12} min={0}
+              onChange={(e) => updateSceneElement(sceneId, el.id, { gap: Number(e.target.value) })}
+              style={{ width: 60, fontSize: 11, padding: "3px 6px" }}
+            />
+          </Row>
+          <Row label="Padding">
+            <input type="number" value={el.padding ?? 0} min={0}
+              onChange={(e) => updateSceneElement(sceneId, el.id, { padding: Number(e.target.value) })}
+              style={{ width: 60, fontSize: 11, padding: "3px 6px" }}
+            />
+          </Row>
+          <Row label="Stagger">
+            <input type="number" value={el.staggerMs ?? 0} min={0} step={50}
+              onChange={(e) => updateSceneElement(sceneId, el.id, { staggerMs: Number(e.target.value) })}
+              style={{ width: 70, fontSize: 11, padding: "3px 6px" }}
+            />
+            <span style={{ color: "#555", fontSize: 10 }}>ms</span>
+          </Row>
+
+          {/* Children list */}
+          <div style={{ marginTop: 8, fontSize: 11, color: "#777" }}>Children ({(el.children ?? []).length})</div>
+          {(el.children as SceneElement[] ?? []).map((child) => (
+            <div key={child.id}
+              style={{ padding: "4px 8px", fontSize: 11, color: "#aaa", borderRadius: 3, cursor: "pointer", marginBottom: 2, background: "#333" }}
+              onClick={() => {
+                useLumvasStore.getState().setActiveScene(sceneId);
+                useLumvasStore.getState().setActiveElement(child.id);
+                useTimelineStore.getState().setInspectorTarget({ type: "element", sceneId, elementId: child.id });
+              }}
+            >
+              <span style={{ color: "#4ecdc4", fontWeight: 600, marginRight: 4 }}>{child.type}</span>
+              {child.content?.slice(0, 16) || "(empty)"}
+            </div>
+          ))}
+
+          {/* Add child to group */}
+          <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginTop: 6 }}>
+            {(["text", "image", "icon"] as const).map((type) => (
+              <button
+                key={type}
+                style={{ padding: "3px 8px", fontSize: 10, color: "#a78bfa", background: "#2a2a2e", border: "1px solid #3a3a3e", borderRadius: 3, cursor: "pointer" }}
+                onClick={() => addSceneElementToGroup(sceneId, el.id, {
+                  id: uid(),
+                  type,
+                  content: type === "text" ? "Text" : "",
+                  timing: { enterMs: 0 },
+                })}
+              >
+                + {type}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Move to group */}
+      {el.type !== "group" && allGroups.length > 0 && (
+        <div className={styles.panelSection}>
+          <Row label="Group">
+            <select
+              value=""
+              onChange={(e) => {
+                const val = e.target.value;
+                if (!val) return;
+                moveSceneElementToGroup(sceneId, el.id, val === "__toplevel__" ? null : val);
+              }}
+              style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
+            >
+              <option value="">Move to group…</option>
+              <option value="__toplevel__">⊞ Top level (ungrouped)</option>
+              {allGroups.map((g) => (
+                <option key={g.id} value={g.id}>⊞ {g.content || "Group"} ({(g.children ?? []).length} items)</option>
+              ))}
+            </select>
+          </Row>
+        </div>
+      )}
+
+      {/* Alignment */}
       <div className={styles.panelSection}>
-        <SectionTitle>Position</SectionTitle>
+        <SectionTitle>Align in Scene</SectionTitle>
+        <div style={{ display: "flex", gap: 3, marginBottom: 8 }}>
+          {[
+            { label: "←", title: "Align left", calc: () => ({ x: 0, anchorX: 0 }) },
+            { label: "↔", title: "Center horizontally", calc: () => ({ x: Math.round(documentSize.width / 2), anchorX: 0.5 }) },
+            { label: "→", title: "Align right", calc: () => ({ x: documentSize.width, anchorX: 1 }) },
+            { label: "↑", title: "Align top", calc: () => ({ y: 0, anchorY: 0 }) },
+            { label: "↕", title: "Center vertically", calc: () => ({ y: Math.round(documentSize.height / 2), anchorY: 0.5 }) },
+            { label: "↓", title: "Align bottom", calc: () => ({ y: documentSize.height, anchorY: 1 }) },
+          ].map(({ label, title, calc }) => (
+            <button
+              key={title}
+              title={title}
+              style={{
+                flex: 1, padding: "6px 0", fontSize: 13, fontWeight: 600,
+                color: "#aaa", background: "#2a2a2e", border: "1px solid #3a3a3e",
+                borderRadius: 4, cursor: "pointer", lineHeight: 1,
+              }}
+              onClick={() => updateSceneElement(sceneId, el.id, calc())}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <button
+          title="Center both axes"
+          style={{
+            width: "100%", padding: "5px 0", fontSize: 11, fontWeight: 600,
+            color: "#0a84ff", background: "rgba(10,132,255,0.08)",
+            border: "1px solid rgba(10,132,255,0.2)", borderRadius: 4, cursor: "pointer",
+            marginBottom: 8,
+          }}
+          onClick={() => updateSceneElement(sceneId, el.id, {
+            x: Math.round(documentSize.width / 2),
+            y: Math.round(documentSize.height / 2),
+            anchorX: 0.5,
+            anchorY: 0.5,
+          })}
+        >
+          Center in Scene
+        </button>
+      </div>
+
+      {/* Position & Size */}
+      <div className={styles.panelSection}>
+        <SectionTitle>Position & Size</SectionTitle>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
           <Row label="X">
             <input
@@ -519,7 +784,7 @@ function ElementInspector({ sceneId, elementId }: { sceneId: string; elementId: 
               value={el.x ?? 0}
               onChange={(e) => updateSceneElement(sceneId, el.id, { x: Number(e.target.value) })}
               style={{ width: "100%", fontSize: 11, padding: "3px 6px" }}
-              title="X position (% of scene width)"
+              title="X position (px)"
             />
           </Row>
           <Row label="Y">
@@ -528,7 +793,7 @@ function ElementInspector({ sceneId, elementId }: { sceneId: string; elementId: 
               value={el.y ?? 0}
               onChange={(e) => updateSceneElement(sceneId, el.id, { y: Number(e.target.value) })}
               style={{ width: "100%", fontSize: 11, padding: "3px 6px" }}
-              title="Y position (% of scene height)"
+              title="Y position (px)"
             />
           </Row>
         </div>
@@ -536,7 +801,7 @@ function ElementInspector({ sceneId, elementId }: { sceneId: string; elementId: 
           <input
             type="text"
             value={el.sceneWidth ?? "auto"}
-            onChange={(e) => updateSceneElement(sceneId, el.id, { sceneWidth: e.target.value })}
+            onChange={(e) => updateSceneElement(sceneId, el.id, { sceneWidth: e.target.value || undefined })}
             placeholder="auto"
             style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
             title='e.g. "50%", "200px", "auto"'
@@ -546,11 +811,39 @@ function ElementInspector({ sceneId, elementId }: { sceneId: string; elementId: 
           <input
             type="text"
             value={el.sceneHeight ?? "auto"}
-            onChange={(e) => updateSceneElement(sceneId, el.id, { sceneHeight: e.target.value })}
+            onChange={(e) => updateSceneElement(sceneId, el.id, { sceneHeight: e.target.value || undefined })}
             placeholder="auto"
             style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
           />
         </Row>
+        <Row label="Max W">
+          <input
+            type="text"
+            value={el.maxWidth ?? ""}
+            onChange={(e) => updateSceneElement(sceneId, el.id, { maxWidth: e.target.value || undefined })}
+            placeholder="none"
+            style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
+            title='e.g. "80%", "600px"'
+          />
+        </Row>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+          <Row label="M Top">
+            <input
+              type="number"
+              value={el.marginTop ?? 0}
+              onChange={(e) => updateSceneElement(sceneId, el.id, { marginTop: Number(e.target.value) })}
+              style={{ width: "100%", fontSize: 11, padding: "3px 6px" }}
+            />
+          </Row>
+          <Row label="M Bot">
+            <input
+              type="number"
+              value={el.marginBottom ?? 0}
+              onChange={(e) => updateSceneElement(sceneId, el.id, { marginBottom: Number(e.target.value) })}
+              style={{ width: "100%", fontSize: 11, padding: "3px 6px" }}
+            />
+          </Row>
+        </div>
         <Row label="Rotation">
           <input
             type="number"
@@ -1241,9 +1534,23 @@ function CaptionInspector({ trackId }: { trackId: string }) {
             style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
           >
             <option value="">Theme default</option>
-            {useLumvasStore.getState().theme.fonts.map((f) => (
-              <option key={f.id} value={f.id}>{f.label}</option>
-            ))}
+            {useLumvasStore.getState().theme.fonts.length > 0 && (
+              <optgroup label="Theme Fonts">
+                {useLumvasStore.getState().theme.fonts.map((f) => (
+                  <option key={f.id} value={f.id}>{f.label} — {f.value.split(",")[0]}</option>
+                ))}
+              </optgroup>
+            )}
+            <optgroup label="System">
+              {FONT_OPTIONS.filter((f) => f.category === "system").map((f) => (
+                <option key={f.value} value={f.value}>{f.label}</option>
+              ))}
+            </optgroup>
+            <optgroup label="Google Fonts">
+              {FONT_OPTIONS.filter((f) => f.category === "google").map((f) => (
+                <option key={f.value} value={f.value}>{f.label}</option>
+              ))}
+            </optgroup>
           </select>
         </Row>
         <Row label="Font Size">
@@ -1264,26 +1571,10 @@ function CaptionInspector({ trackId }: { trackId: string }) {
           </select>
         </Row>
         <Row label="Color">
-          <input
-            type="color"
-            value={track.appearance.color ?? "#ffffff"}
-            onChange={(e) => updateCaptionTrack(track.id, { appearance: { ...track.appearance, color: e.target.value } })}
-            style={{ width: 28, height: 22, padding: 0, border: "1px solid #3a3a3e", borderRadius: 3, cursor: "pointer" }}
-          />
-          <input
-            type="text"
-            value={track.appearance.color ?? "#ffffff"}
-            onChange={(e) => updateCaptionTrack(track.id, { appearance: { ...track.appearance, color: e.target.value } })}
-            style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
-          />
+          <ColorPicker value={track.appearance.color ?? "#ffffff"} onChange={(v) => updateCaptionTrack(track.id, { appearance: { ...track.appearance, color: v ?? "#ffffff" } })} />
         </Row>
         <Row label="BG Color">
-          <input
-            type="color"
-            value={track.appearance.backgroundColor ?? "#000000"}
-            onChange={(e) => updateCaptionTrack(track.id, { appearance: { ...track.appearance, backgroundColor: e.target.value } })}
-            style={{ width: 28, height: 22, padding: 0, border: "1px solid #3a3a3e", borderRadius: 3, cursor: "pointer" }}
-          />
+          <ColorPicker value={track.appearance.backgroundColor ?? "#000000"} onChange={(v) => updateCaptionTrack(track.id, { appearance: { ...track.appearance, backgroundColor: v ?? "#000000" } })} />
           <input
             type="number"
             value={Math.round((track.appearance.backgroundOpacity ?? 0.7) * 100)}
@@ -1316,12 +1607,7 @@ function CaptionInspector({ trackId }: { trackId: string }) {
           <span style={{ color: "#555", fontSize: 10 }}>px</span>
         </Row>
         <Row label="Highlight">
-          <input
-            type="color"
-            value={track.appearance.highlightColor ?? "#FFD700"}
-            onChange={(e) => updateCaptionTrack(track.id, { appearance: { ...track.appearance, highlightColor: e.target.value } })}
-            style={{ width: 28, height: 22, padding: 0, border: "1px solid #3a3a3e", borderRadius: 3, cursor: "pointer" }}
-          />
+          <ColorPicker value={track.appearance.highlightColor ?? "#FFD700"} onChange={(v) => updateCaptionTrack(track.id, { appearance: { ...track.appearance, highlightColor: v ?? "#FFD700" } })} />
           <span style={{ fontSize: 10, color: "#666" }}>for karaoke</span>
         </Row>
         <Row label="Position">
@@ -1480,6 +1766,9 @@ function CaptionInspector({ trackId }: { trackId: string }) {
 
 function EmptyInspector({ message }: { message?: string }) {
   const addCaptionTrack = useLumvasStore((s) => s.addCaptionTrack);
+  const documentSize = useLumvasStore((s) => s.documentSize);
+  const setDocumentSize = useLumvasStore((s) => s.setDocumentSize);
+  const sizeKey = `${documentSize.width}x${documentSize.height}`;
 
   return (
     <div className={styles.panelSection}>
@@ -1487,6 +1776,58 @@ function EmptyInspector({ message }: { message?: string }) {
       <p style={{ fontSize: 12, color: "#555", lineHeight: 1.5 }}>
         {message ?? "Select a scene, element, audio track, or caption on the timeline to edit its properties."}
       </p>
+
+      {/* Composition Dimensions */}
+      <SectionTitle>Composition</SectionTitle>
+      <Row label="Preset">
+        <select
+          value={DOCUMENT_SIZES.some((s) => s.width === documentSize.width && s.height === documentSize.height) ? sizeKey : "custom"}
+          onChange={(e) => {
+            if (e.target.value === "custom") return;
+            const picked = DOCUMENT_SIZES.find(
+              (s) => `${s.width}x${s.height}` === e.target.value
+            );
+            if (picked) setDocumentSize(picked);
+          }}
+          style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}
+        >
+          {DOCUMENT_SIZES.map((s) => (
+            <option key={`${s.width}x${s.height}`} value={`${s.width}x${s.height}`}>
+              {s.label}
+            </option>
+          ))}
+          {!DOCUMENT_SIZES.some((s) => s.width === documentSize.width && s.height === documentSize.height) && (
+            <option value="custom">Custom ({documentSize.width}×{documentSize.height})</option>
+          )}
+        </select>
+      </Row>
+      <Row label="Width">
+        <input
+          type="number"
+          value={documentSize.width}
+          min={320}
+          max={3840}
+          step={10}
+          onChange={(e) =>
+            setDocumentSize({ ...documentSize, width: Number(e.target.value), label: "Custom" })
+          }
+          style={{ width: 80, fontSize: 11, padding: "3px 6px" }}
+        />
+      </Row>
+      <Row label="Height">
+        <input
+          type="number"
+          value={documentSize.height}
+          min={320}
+          max={3840}
+          step={10}
+          onChange={(e) =>
+            setDocumentSize({ ...documentSize, height: Number(e.target.value), label: "Custom" })
+          }
+          style={{ width: 80, fontSize: 11, padding: "3px 6px" }}
+        />
+      </Row>
+
       <button
         style={{ width: "100%", marginTop: 12, padding: "8px 0", fontSize: 12, fontWeight: 500, color: "#888", background: "transparent", border: "1px dashed #3a3a3e", borderRadius: 6, cursor: "pointer" }}
         onClick={() => {

@@ -171,11 +171,25 @@ export class AudioEngine {
     source.buffer = track.buffer;
     source.connect(track.gain);
 
+    // Fade-in
     if (track.fadeInMs > 0 && delayFromNow <= 0) {
       track.gain.gain.setValueAtTime(0, ctx.currentTime);
       track.gain.gain.linearRampToValueAtTime(track.volume, ctx.currentTime + track.fadeInMs / 1000);
+    } else if (track.fadeInMs > 0 && delayFromNow > 0) {
+      // Track hasn't started yet — schedule fade-in from when it starts
+      track.gain.gain.setValueAtTime(0, ctx.currentTime + delayFromNow);
+      track.gain.gain.linearRampToValueAtTime(track.volume, ctx.currentTime + delayFromNow + track.fadeInMs / 1000);
     } else {
       track.gain.gain.setValueAtTime(track.volume, ctx.currentTime);
+    }
+
+    // Fade-out: schedule volume ramp to 0 before track ends
+    if (track.fadeOutMs > 0 && remainingDuration > 0) {
+      const fadeOutStart = (delayFromNow > 0 ? delayFromNow : 0) + remainingDuration - track.fadeOutMs / 1000;
+      if (fadeOutStart > 0) {
+        track.gain.gain.setValueAtTime(track.volume, ctx.currentTime + fadeOutStart);
+        track.gain.gain.linearRampToValueAtTime(0, ctx.currentTime + fadeOutStart + track.fadeOutMs / 1000);
+      }
     }
 
     if (delayFromNow > 0) {

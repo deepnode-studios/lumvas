@@ -33,7 +33,10 @@ async function fetchAudioBytes(
       return resp.arrayBuffer();
     }
 
-    if (!projectDir) return null;
+    if (!projectDir) {
+      console.warn(`[audio] No projectDir, cannot load "${track.src}"`);
+      return null;
+    }
     const fullPath = `${projectDir}/${track.src}`;
 
     if (_readFile) {
@@ -41,7 +44,9 @@ async function fetchAudioBytes(
         const bytes = await _readFile(fullPath);
         // bytes.buffer may be a shared/larger ArrayBuffer; slice to exact range
         return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-      } catch { /* fall through */ }
+      } catch (e) {
+        console.warn(`[audio] readFile failed for "${fullPath}":`, e);
+      }
     }
 
     if (_convertFileSrc) {
@@ -49,9 +54,18 @@ async function fetchAudioBytes(
         const url = _convertFileSrc(fullPath);
         const resp = await fetch(url);
         return resp.arrayBuffer();
-      } catch { /* fall through */ }
+      } catch (e) {
+        console.warn(`[audio] convertFileSrc/fetch failed for "${fullPath}":`, e);
+      }
     }
 
+    // Fallback: try asset protocol (Tauri)
+    try {
+      const resp = await fetch(`asset://localhost/${fullPath}`);
+      if (resp.ok) return resp.arrayBuffer();
+    } catch { /* not in Tauri or path not allowed */ }
+
+    console.warn(`[audio] All methods failed for "${track.src}" (fullPath: ${fullPath})`);
     return null;
   } catch {
     return null;
