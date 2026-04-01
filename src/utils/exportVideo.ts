@@ -1,7 +1,7 @@
 import { useLumvasStore, selectVideoContent } from "@/store/useLumvasStore";
 import { useExportStore } from "@/store/useExportStore";
 import { getLastDialogPath, setLastDialogPath, revealInFolder } from "./dialogPath";
-import { renderSceneToCanvas, renderCaptionsToCanvas, preloadSceneAssets, seekSceneVideos } from "./canvasRenderer";
+import { renderSceneToCanvas, renderCaptionsToCanvas, renderComposition, preloadSceneAssets, preloadCompositionAssets, seekSceneVideos, buildCompositionMap } from "./canvasRenderer";
 import { applySceneTransition } from "./sceneTransition";
 import type { VideoScene } from "@/types/schema";
 
@@ -50,14 +50,25 @@ export async function confirmExport() {
     const size = { ...store.documentSize, width: renderWidth, height: renderHeight };
     const projectDir = (await import("@/store/useFileStore")).useFileStore.getState().currentFilePath;
 
-    const totalDurationMs = vc.scenes.reduce((sum, s) => sum + s.durationMs, 0);
+    // Composition mode or legacy scene mode
+    const hasCompositions = !!(vc.compositions && vc.rootCompositionId);
+    const compMap = hasCompositions ? buildCompositionMap(vc) : null;
+    const rootComp = hasCompositions ? compMap!.get(vc.rootCompositionId!) : null;
+
+    const totalDurationMs = rootComp
+      ? rootComp.durationMs
+      : (vc.scenes ?? []).reduce((sum, s) => sum + s.durationMs, 0);
     const frameIntervalMs = 1000 / exportFps;
     const totalFrames = Math.ceil(totalDurationMs / frameIntervalMs);
 
     // Phase 1 — preload all images/assets (ONCE)
     exportStore.setPhase("rendering-frames");
-    for (const scene of vc.scenes) {
-      await preloadSceneAssets(scene, assets, projectDir);
+    if (hasCompositions && compMap) {
+      await preloadCompositionAssets(vc.rootCompositionId!, compMap, assets, projectDir);
+    } else {
+      for (const scene of (vc.scenes ?? [])) {
+        await preloadSceneAssets(scene, assets, projectDir);
+      }
     }
 
     // Phase 2 — mix audio (if any)
@@ -129,70 +140,39 @@ export async function confirmExport() {
 
     const originalSize = store.documentSize; // unscaled
 
-    // Build scene start time map for transition lookup
-    const sceneStartTimes: number[] = [];
-    {
-      let t = 0;
-      for (const s of vc.scenes) { sceneStartTimes.push(t); t += s.durationMs; }
-    }
-
     for (let i = 0; i < totalFrames; i++) {
       if (!useExportStore.getState().isExporting) break;
 
       const timeMs = i * frameIntervalMs;
 
-      // Find scene at this time
-      let elapsed = 0;
-      let sceneIdx = -1;
-      let scene: VideoScene | null = null;
-      let sceneTimeMs = 0;
-      for (let si = 0; si < vc.scenes.length; si++) {
-        const s = vc.scenes[si];
-        if (timeMs >= elapsed && timeMs < elapsed + s.durationMs) {
-          scene = s;
-          sceneIdx = si;
-          sceneTimeMs = timeMs - elapsed;
-          break;
+      if (hasCompositions && compMap && rootComp) {
+        // ─── Composition mode: single renderComposition call ───
+        ctx.clearRect(0, 0, renderWidth, renderHeight);
+        if (exportScale !== 1) ctx.save();
+        renderComposition(ctx, vc.rootCompositionId!, compMap, theme, assets, originalSize, projectDir, timeMs, language);
+        if (exportScale !== 1) ctx.restore();
+      } else {
+        // ─── Legacy scene mode ───
+        const scenes = vc.scenes ?? [];
+        let elapsed = 0;
+        let scene: VideoScene | null = null;
+        let sceneTimeMs = 0;
+        for (const s of scenes) {
+          if (timeMs >= elapsed && timeMs < elapsed + s.durationMs) {
+            scene = s;
+            sceneTimeMs = timeMs - elapsed;
+            break;
+          }
+          elapsed += s.durationMs;
         }
-        elapsed += s.durationMs;
-      }
-      if (!scene && vc.scenes.length > 0) {
-        scene = vc.scenes[vc.scenes.length - 1];
-        sceneIdx = vc.scenes.length - 1;
-        sceneTimeMs = scene.durationMs;
-      }
-      if (!scene) continue;
-
-      // Seek video elements to the correct frame time before rendering
-      await seekSceneVideos(scene, sceneTimeMs, projectDir, vc.settings.fps);
-
-      // Render directly to canvas — <5ms per frame
-      renderSceneToCanvas(ctx, scene, theme, assets, originalSize, projectDir, sceneTimeMs, language);
-
-      // Scene transition: if within the transition window of the NEXT scene, composite
-      if (
-        sceneIdx >= 0 &&
-        sceneIdx < vc.scenes.length - 1 &&
-        scene.transition &&
-        scene.transition.preset !== "none"
-      ) {
-        const transMs = scene.transition.durationMs;
-        const sceneEnd = sceneStartTimes[sceneIdx] + scene.durationMs;
-        const transStart = sceneEnd - transMs;
-        if (timeMs >= transStart) {
-          const nextScene = vc.scenes[sceneIdx + 1];
-          const nextSceneTimeMs = timeMs - sceneEnd;
-          const progress = Math.min(1, (timeMs - transStart) / transMs);
-          // Render next scene onto a temp canvas, then composite
-          const tempCanvas = document.createElement("canvas");
-          tempCanvas.width = renderWidth;
-          tempCanvas.height = renderHeight;
-          const tempCtx = tempCanvas.getContext("2d")!;
-          if (exportScale !== 1) tempCtx.scale(exportScale, exportScale);
-          await seekSceneVideos(nextScene, Math.max(0, nextSceneTimeMs), projectDir, vc.settings.fps);
-          renderSceneToCanvas(tempCtx, nextScene, theme, assets, originalSize, projectDir, Math.max(0, nextSceneTimeMs), language);
-          applySceneTransition(ctx, tempCanvas, scene.transition, progress, renderWidth, renderHeight);
+        if (!scene && scenes.length > 0) {
+          scene = scenes[scenes.length - 1];
+          sceneTimeMs = scene.durationMs;
         }
+        if (!scene) continue;
+
+        await seekSceneVideos(scene, sceneTimeMs, projectDir, vc.settings.fps);
+        renderSceneToCanvas(ctx, scene, theme, assets, originalSize, projectDir, sceneTimeMs, language);
       }
 
       // Draw captions on top

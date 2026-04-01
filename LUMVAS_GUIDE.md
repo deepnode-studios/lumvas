@@ -13,15 +13,17 @@
 5. [Asset System](#5-asset-system)
 6. [Element Types](#6-element-types)
 7. [Slide Documents](#7-slide-documents)
-8. [Video Documents](#8-video-documents)
+8. [Video Documents — Composition Architecture](#8-video-documents--composition-architecture)
 9. [Scene Elements & Positioning](#9-scene-elements--positioning)
 10. [Animation & Effects System](#10-animation--effects-system)
 11. [Effect Definitions Catalog](#11-effect-definitions-catalog)
 12. [Keyframe System](#12-keyframe-system)
+12b. [Blend Modes](#12b-blend-modes)
+12c. [Element Masking](#12c-element-masking)
 13. [Easing System](#13-easing-system)
 14. [Audio Tracks](#14-audio-tracks)
 15. [Caption System](#15-caption-system)
-16. [Scene Transitions](#16-scene-transitions)
+16. [Scene Transitions (Legacy)](#16-scene-transitions)
 17. [Slide Styling](#17-slide-styling)
 18. [Group Elements](#18-group-elements)
 19. [Video Export](#19-video-export)
@@ -189,11 +191,14 @@ All 14 element types and their specific properties:
 ```jsonc
 {
   "type": "image",
-  "content": "media/img-a1b2c3.png", // Path to image file
+  "content": "media/img-a1b2c3.png", // Path to image or video file
   "objectFit": "cover",              // "cover" | "contain" | "fill"
   "borderRadius": 12,
   "width": "100%",
-  "height": "auto"
+  "height": "auto",
+  // Video-specific (for .mp4, .webm, .mov files):
+  "videoLoop": true,                 // Auto-loop video within timeline
+  "videoTrimLastFrame": true         // Skip last frame for seamless loops
 }
 ```
 
@@ -376,15 +381,18 @@ For `contentType: "slides"` (or omitted):
 
 ---
 
-## 8. Video Documents
+## 8. Video Documents — Composition Architecture
 
-For `contentType: "video"`:
+Video documents use a **composition-based** architecture. Compositions are independent timeline containers that can be nested (pre-composed) inside each other, forming a render tree (DAG).
+
+### VideoContentNode
 
 ```jsonc
 {
   "content": {
-    "scenes": [ /* VideoScene[] */ ],
-    "audioTracks": [ /* AudioTrack[] */ ],
+    "compositions": [ /* Composition[] */ ],
+    "rootCompositionId": "comp-root",
+    "audioTracks": [ /* AudioTrack[] — global */ ],
     "captionTracks": [ /* CaptionTrack[] */ ],
     "settings": {
       "fps": 30,                // 24 | 30 | 60
@@ -396,29 +404,128 @@ For `contentType: "video"`:
 }
 ```
 
-### VideoScene
+### Composition
+
+A composition is an independent timeline with its own layer stack, dimensions, and duration.
 
 ```jsonc
 {
-  "id": "scene-1",
-  "durationMs": 5000,
-  "elements": [ /* SceneElement[] */ ],
-  "direction": "column",
-  "alignItems": "center",
-  "justifyContent": "center",
-  "padding": 0,
-  "gap": 24,
-  "style": {
-    "backgroundColor": "#1a1a2e",
-    "backgroundGradient": "linear-gradient(135deg, #1a1a2e, #16213e)"
+  "id": "comp-root",
+  "name": "Root",
+  "durationMs": 81000,
+  "width": 1080,              // optional — defaults to document size
+  "height": 1920,
+  "style": {                  // optional background
+    "backgroundColor": "#0F1A19",
+    "backgroundGradient": "radial-gradient(...)"
   },
-  "transition": {
-    "preset": "crossfade",
-    "durationMs": 500,
-    "easing": "ease-in-out"
-  }
+  "layers": [ /* CompLayer[] — ordered bottom to top */ ]
 }
 ```
+
+### CompLayer
+
+A layer in a composition's timeline. Layers are rendered bottom-to-top (first in array = bottom of Z-stack).
+
+```jsonc
+{
+  "id": "layer-bg-video",
+  "name": "Background Video",
+  "source": { /* LayerSource */ },
+  "startMs": 0,              // when this layer starts in the parent comp
+  "durationMs": 81000,       // how long this layer is visible
+  "enabled": true,           // default true
+  "effects": [ /* Effect[] */ ],
+  "opacity": 0.9,
+  "blendMode": "soft-light"
+}
+```
+
+### LayerSource (discriminated union)
+
+```jsonc
+// Element layer — a visual element (text, image, shape, etc.)
+{ "type": "element", "element": { /* SceneElement */ } }
+
+// Composition layer — reference to a nested (pre-composed) composition
+{ "type": "composition", "compositionId": "scene-intro" }
+
+// Audio layer
+{ "type": "audio", "audio": { /* AudioTrack */ } }
+
+// Caption layer
+{ "type": "caption", "caption": { /* CaptionTrack */ } }
+```
+
+### Example: Root composition with background video and scene compositions
+
+```jsonc
+{
+  "id": "comp-root",
+  "name": "Root",
+  "durationMs": 81000,
+  "layers": [
+    {
+      "id": "layer-bg",
+      "name": "Background Video",
+      "source": {
+        "type": "element",
+        "element": {
+          "id": "bg-video",
+          "type": "image",
+          "content": "media/bg-video.mp4",
+          "x": 0, "y": 0,
+          "sceneWidth": "100%", "sceneHeight": "100%",
+          "objectFit": "cover",
+          "opacity": 0.9,
+          "videoLoop": true,
+          "videoTrimLastFrame": true,
+          "timing": { "enterMs": 0 }
+        }
+      },
+      "startMs": 0,
+      "durationMs": 81000,
+      "opacity": 0.9,
+      "blendMode": "soft-light"
+    },
+    {
+      "id": "layer-intro",
+      "name": "Intro",
+      "source": { "type": "composition", "compositionId": "scene-intro" },
+      "startMs": 0,
+      "durationMs": 5800
+    },
+    {
+      "id": "layer-scene1",
+      "name": "Bingo 1",
+      "source": { "type": "composition", "compositionId": "scene-m1" },
+      "startMs": 5800,
+      "durationMs": 5500
+    }
+  ]
+}
+```
+
+### Key concepts
+
+- **Root composition**: The final output. Its `durationMs` determines video length.
+- **Child compositions**: Contain their own layers (text, images, effects). Background should be transparent so parent layers (like a background video) show through.
+- **Nesting**: A composition can reference another composition as a layer source, enabling hierarchical organization.
+- **Render order**: Layers render bottom-to-top. First layer in the array is drawn first (background), last layer drawn on top.
+- **Timing**: `CompLayer.startMs` and `durationMs` position the layer on the parent timeline. Element timing within the layer is relative to the layer (enterMs=0 means layer start).
+
+### Video elements
+
+Image elements can reference `.mp4`, `.webm`, `.mov` files. Video frames are decoded via FFmpeg (not browser `<video>` elements) and drawn to canvas.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `videoLoop` | boolean | Auto-loop the video within the layer's duration |
+| `videoTrimLastFrame` | boolean | Skip last frame when looping (for seamless-loop videos) |
+
+### Legacy: VideoScene (deprecated)
+
+Old projects use `scenes: VideoScene[]` instead of `compositions`. These are automatically migrated to compositions on load. The `scenes` field is no longer used for new projects.
 
 ---
 
@@ -456,10 +563,36 @@ For `contentType: "video"`:
 
   // Timing (REQUIRED for scene elements)
   "timing": {
-    "enterMs": 0,               // When element appears (ms from scene start)
-    "exitMs": 5000,             // When element disappears (omit = scene end)
+    "enterMs": 0,               // When element appears (ms from layer/scene start)
+    "exitMs": 5000,             // When element disappears (omit = layer/scene end)
     "effects": [ /* Effect[] */ ]
   }
+}
+```
+
+> **Composition mode**: In the composition architecture, element timing is relative to the **layer** containing the element. The layer's `startMs`/`durationMs` in the parent composition handles absolute positioning. When rendering, `enterMs` is remapped to 0 (layer start) and `exitMs` to `layer.durationMs`.
+
+```jsonc
+// Example: element with effects in a composition layer
+{
+  "id": "layer-title",
+  "source": {
+    "type": "element",
+    "element": {
+      "id": "title",
+      "type": "text",
+      "content": "Hello",
+      "timing": {
+        "enterMs": 0,          // relative to layer start
+        "effects": [
+          { "id": "fx1", "definitionId": "blur-in", "trigger": "enter", "durationMs": 500, "enabled": true, "params": { "fromBlur": 18 } },
+          { "id": "fx2", "definitionId": "fade-out", "trigger": "exit", "durationMs": 400, "enabled": true, "params": {} }
+        ]
+      }
+    }
+  },
+  "startMs": 1000,            // appears 1s into parent composition
+  "durationMs": 4000           // visible for 4s — exit effect plays at 3600ms
 }
 ```
 
@@ -791,7 +924,9 @@ Scene elements support `"maskElementId"` — the ID of another element in the sa
 
 ---
 
-## 16. Scene Transitions
+## 16. Scene Transitions (Legacy)
+
+> **Note**: Scene transitions are part of the legacy `scenes[]` format. In the composition architecture, transitions are achieved by overlapping composition layers with opacity/blend effects. This section is kept for backward compatibility.
 
 ```jsonc
 {
@@ -1136,13 +1271,25 @@ System UI, Arial, Georgia, Times New Roman, Courier New, Verdana, Trebuchet MS, 
 
 ## Notes for LLM Project Generation
 
-1. **Always include `timing`** on every scene element — it's required. At minimum: `{ "enterMs": 0 }`.
-2. **Generate unique IDs** for all objects (scenes, elements, effects, tracks, segments). Use short random strings (e.g. 8 chars alphanumeric).
-3. **Use anchor for centering**: Set `anchorX: 0.5, anchorY: 0.5` with `x` and `y` at the desired center point.
-4. **Effects need both top-level and params**: Some params like `durationMs` appear both at the effect level AND inside `params`. Include in both for compatibility.
-5. **Media references**: Use relative paths (`"media/filename.ext"`). Place actual files in the `media/` directory.
-6. **Color tokens**: Use `"primary"`, `"secondary"`, or palette IDs for theme-aware colors. Use hex for fixed colors.
-7. **Font selection**: Use Google Font names directly as `fontId` (e.g. `"Montserrat, sans-serif"`) or theme token IDs.
-8. **Scene duration**: Must be explicitly set in milliseconds. Elements without `exitMs` stay until scene ends.
-9. **Groups**: Absolutely positioned on scene, children are flex-positioned within. Each child has independent animation timing.
-10. **Transitions**: Set on a scene to define how it transitions to the NEXT scene.
+### Composition Architecture (new projects)
+
+1. **Use compositions, not scenes**: New video projects must use `compositions[]` + `rootCompositionId`. The `scenes[]` field is deprecated.
+2. **Root composition**: Create one root composition. Its `durationMs` is the total video length. All other compositions are children referenced as layers.
+3. **Layer structure**: The root composition's layers define the Z-stack. First layer = bottom (background), last layer = top. Use `source.type: "composition"` for nested compositions, `source.type: "element"` for direct elements.
+4. **Background video**: Place as an element layer at the bottom of the root composition spanning the full duration. Set `videoLoop: true` and `videoTrimLastFrame: true`. No need to duplicate across child compositions.
+5. **Child compositions should have transparent backgrounds**: Don't set `style.backgroundColor` on child compositions — let the root's background layers show through.
+6. **Layer timing**: `CompLayer.startMs` and `durationMs` position the layer on the parent timeline. Element `timing.enterMs` within a layer is relative to the layer start (use 0 for "start when layer starts").
+7. **Element layers extend to fill**: Layer `durationMs` should equal the composition's `durationMs - layer.startMs` so elements stay visible until the composition ends (unless intentionally shorter for exit effects).
+
+### General rules
+
+8. **Always include `timing`** on every element — at minimum: `{ "enterMs": 0 }`.
+9. **Generate unique IDs** for all objects (compositions, layers, elements, effects, tracks, segments). Use short random strings.
+10. **Use anchor for centering**: Set `anchorX: 0.5, anchorY: 0.5` with `x` and `y` at the desired center point.
+11. **Effects need both top-level and params**: Some params like `durationMs` appear both at the effect level AND inside `params`. Include in both.
+12. **Media references**: Use relative paths (`"media/filename.ext"`). Place actual files in the `media/` directory.
+13. **Color tokens**: Use `"primary"`, `"secondary"`, or palette IDs for theme-aware colors. Use hex for fixed colors.
+14. **Font selection**: Use Google Font names directly as `fontId` (e.g. `"Montserrat, sans-serif"`) or theme token IDs.
+15. **Groups**: Absolutely positioned, children are flex-positioned within. Each child has independent animation timing.
+16. **Video files**: Use image elements with `.mp4`/`.webm` content. Frames are decoded via FFmpeg. Set `videoLoop` for looping backgrounds.
+17. **Text supports `\n`**: Explicit newlines in text content are rendered as line breaks.
