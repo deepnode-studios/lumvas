@@ -498,6 +498,20 @@ export const EFFECT_DEFINITIONS: EffectDefinition[] = [
     ],
   },
 
+  // ─── STYLE ────────────────────────────────────────────────────────────────
+  {
+    id: "boil",
+    label: "Boil",
+    category: "motion",
+    icon: "⟁",
+    description: "Stop-motion 'boil' jitter — random position/rotation wobble at a reduced frame rate, giving text a hand-drawn, organic feel.",
+    defaultTrigger: "lifetime",
+    params: [
+      { key: "amplitude", label: "Amplitude (px)", type: "number", min: 0.5, max: 10, step: 0.5, default: 2 },
+      { key: "speed", label: "Frame Rate (fps)", type: "number", min: 2, max: 24, step: 1, default: 8 },
+    ],
+  },
+
   // ─── DRAW ─────────────────────────────────────────────────────────────────
   {
     id: "draw-on",
@@ -541,7 +555,7 @@ export const EFFECT_DEFINITIONS: EffectDefinition[] = [
     label: "Custom Keyframes",
     category: "keyframes",
     icon: "◆",
-    description: "Animate any property over the element lifetime with custom keyframes. Supports opacity, x, y, scale, rotation, blur, color, backgroundColor, and drawProgress.",
+    description: "Animate any property over the element lifetime with custom keyframes. Supports opacity, x, y, scale, rotation, blur, color, backgroundColor, drawProgress, letterSpacing, textStrokeColor, and textStrokeWidth.",
     defaultTrigger: "lifetime",
     params: [
       { key: "keyframes", label: "Keyframes", type: "keyframes", default: [] },

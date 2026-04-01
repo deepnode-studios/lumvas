@@ -1,9 +1,10 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLumvasStore, selectVideoContent } from "@/store/useLumvasStore";
 import { useFileStore } from "@/store/useFileStore";
 import { useTimelineStore } from "@/store/useTimelineStore";
 import { writeMediaFromDataUri } from "@/utils/lumvasFile";
 import { resolveMediaSrc } from "@/utils/media";
+import { isVideoSrc, preloadVideo, drawVideoFrameToCanvas } from "@/utils/videoCache";
 import type { AssetItem, AudioTrack, SceneElement, AudioTrackType } from "@/types/schema";
 import styles from "./mediaPool.module.css";
 import { SceneThumbnail } from "./SceneThumbnail";
@@ -19,6 +20,48 @@ function fileToBase64(file: File): Promise<string> {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+/** Video thumbnail — extracts frames via FFmpeg then draws first frame */
+function VideoThumb({ src, className }: { src: string; className?: string }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const projectDir = useFileStore.getState().currentFilePath;
+    // Preload extracts ALL frames to disk in one FFmpeg call
+    preloadVideo(src, projectDir).then(() => {
+      if (cancelled) return;
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      canvas.width = 160;
+      canvas.height = 90;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      // Draw first frame (100ms in to skip black)
+      const drawn = drawVideoFrameToCanvas(ctx, src, 100, 0, 0, 160, 90);
+      if (drawn) setLoaded(true);
+      else {
+        // Frame image might still be loading — retry after a short delay
+        setTimeout(() => {
+          if (cancelled) return;
+          drawVideoFrameToCanvas(ctx, src, 100, 0, 0, 160, 90);
+          setLoaded(true);
+        }, 500);
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [src]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className={className}
+      draggable={false}
+      style={loaded ? undefined : { background: "#2a2a2e" }}
+    />
+  );
 }
 
 type Tab = "media" | "audio" | "text" | "scenes";
@@ -178,7 +221,11 @@ export function MediaPool() {
                         title={`Drag "${asset.label}" to add to scene. Click to edit.`}
                       >
                         {asset.data ? (
-                          <img src={src} alt={asset.label} className={styles.mediaThumb} draggable={false} />
+                          isVideoSrc(asset.data) ? (
+                            <VideoThumb src={src} className={styles.mediaThumb} />
+                          ) : (
+                            <img src={src} alt={asset.label} className={styles.mediaThumb} draggable={false} />
+                          )
                         ) : (
                           <div className={styles.mediaPlaceholder}>?</div>
                         )}

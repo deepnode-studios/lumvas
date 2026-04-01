@@ -418,6 +418,143 @@ pub async fn encode_video(
     }
 }
 
+/// Get video metadata (duration, width, height).
+#[command]
+pub async fn get_video_info(
+    app: tauri::AppHandle,
+    video_path: String,
+) -> Result<(f64, u32, u32), String> {
+    let args: Vec<String> = vec![
+        "-v".into(), "quiet".into(),
+        "-select_streams".into(), "v:0".into(),
+        "-show_entries".into(), "stream=width,height,duration:format=duration".into(),
+        "-of".into(), "csv=p=0:s=,".into(),
+        video_path,
+    ];
+    let output = run_ffmpeg_binary(&app, "ffprobe", &args).await?;
+    if !output.success {
+        return Err(String::from_utf8_lossy(&output.stderr).to_string());
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // ffprobe outputs: width,height,stream_duration\n,format_duration
+    // Sometimes stream duration is N/A, so we fall back to format duration
+    let lines: Vec<&str> = stdout.trim().lines().collect();
+    let parts: Vec<&str> = lines.first().unwrap_or(&"").split(',').collect();
+    let width: u32 = parts.first().and_then(|s| s.parse().ok()).unwrap_or(1920);
+    let height: u32 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(1080);
+    // Try stream duration first, then format duration
+    let duration_str = parts.get(2)
+        .filter(|s| !s.is_empty() && **s != "N/A")
+        .copied()
+        .or_else(|| lines.get(1).map(|s| s.trim_matches(',')))
+        .unwrap_or("0");
+    let duration_ms = duration_str.parse::<f64>().unwrap_or(0.0) * 1000.0;
+    Ok((duration_ms, width, height))
+}
+
+/// Decode a single video frame as raw RGBA pixels using FFmpeg.
+/// Returns a Vec<u8> of width*height*4 bytes (RGBA).
+#[command]
+pub async fn decode_video_frame(
+    video_path: String,
+    time_sec: f64,
+    width: u32,
+    height: u32,
+) -> Result<Vec<u8>, String> {
+    let ffmpeg_bin = find_ffmpeg_binary("ffmpeg")?;
+    let size_str = format!("{}x{}", width, height);
+    let time_str = format!("{:.4}", time_sec);
+
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        std::process::Command::new(&ffmpeg_bin)
+            .args([
+                "-ss", &time_str,
+                "-i", &video_path,
+                "-frames:v", "1",
+                "-f", "rawvideo",
+                "-pix_fmt", "rgba",
+                "-s", &size_str,
+                "-v", "quiet",
+                "pipe:1",
+            ])
+            .env_clear()
+            .env("PATH", std::env::var("PATH").unwrap_or_default())
+            .env("HOME", std::env::var("HOME").unwrap_or_default())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .output()
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| format!("FFmpeg frame decode failed: {}", e))?;
+
+    if !result.status.success() {
+        return Err("FFmpeg frame decode returned non-zero exit code".into());
+    }
+
+    let expected = (width * height * 4) as usize;
+    if result.stdout.len() != expected {
+        return Err(format!(
+            "FFmpeg output size mismatch: got {} bytes, expected {}",
+            result.stdout.len(), expected
+        ));
+    }
+
+    Ok(result.stdout)
+}
+
+/// Extract ALL frames from a video as JPEG files in a single FFmpeg call.
+/// Returns the output directory path and total frame count.
+#[command]
+pub async fn extract_video_frames(
+    video_path: String,
+    output_dir: String,
+    fps: u32,
+    scale_width: u32,
+    scale_height: u32,
+) -> Result<u32, String> {
+    let ffmpeg_bin = find_ffmpeg_binary("ffmpeg")?;
+    let scale_str = format!("fps={},scale={}:{}", fps, scale_width, scale_height);
+    let output_pattern = format!("{}/frame_%05d.jpg", output_dir);
+
+    // Create output dir
+    std::fs::create_dir_all(&output_dir).map_err(|e| format!("mkdir failed: {}", e))?;
+
+    log::info!("extract_video_frames: {} → {} ({}x{} @ {}fps)", video_path, output_dir, scale_width, scale_height, fps);
+
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        std::process::Command::new(&ffmpeg_bin)
+            .args([
+                "-i", &video_path,
+                "-vf", &scale_str,
+                "-q:v", "4",  // JPEG quality (2=best, 31=worst, 4=good balance)
+                "-v", "quiet",
+                &output_pattern,
+            ])
+            .env_clear()
+            .env("PATH", std::env::var("PATH").unwrap_or_default())
+            .env("HOME", std::env::var("HOME").unwrap_or_default())
+            .output()
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| format!("FFmpeg frame extraction failed: {}", e))?;
+
+    if !result.status.success() {
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        return Err(format!("FFmpeg frame extraction error: {}", stderr));
+    }
+
+    // Count extracted frames
+    let count = std::fs::read_dir(&output_dir)
+        .map_err(|e| e.to_string())?
+        .filter(|e| e.as_ref().map(|e| e.path().extension().map(|x| x == "jpg").unwrap_or(false)).unwrap_or(false))
+        .count() as u32;
+
+    log::info!("extract_video_frames: extracted {} frames", count);
+    Ok(count)
+}
+
 /// Get audio duration in milliseconds.
 #[command]
 pub async fn get_audio_duration(

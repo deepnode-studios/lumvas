@@ -16,6 +16,8 @@ import type {
 } from "@/types/schema";
 import { computeElementStyle, type ComputedElementStyle } from "@/utils/animation";
 import { computeEffects } from "@/utils/effectsRenderer";
+import { isVideoSrc, preloadVideo, drawVideoFrameToCanvas, computeVideoSeekTime, getVideoMeta } from "@/utils/videoCache";
+import { log } from "@/utils/logger";
 
 /* ─── Image cache ─── */
 
@@ -88,16 +90,30 @@ export async function preloadSceneAssets(
 
   scene.elements.forEach(collectFromElement);
 
-  await Promise.all(
-    Array.from(srcs).filter(Boolean).map((src) => preloadImage(src).catch(() => { })),
-  );
+  const imageSrcs: string[] = [];
+  const videoSrcs: string[] = [];
+  for (const src of srcs) {
+    if (!src) continue;
+    if (isVideoSrc(src)) videoSrcs.push(src);
+    else imageSrcs.push(src);
+  }
+
+  if (videoSrcs.length > 0) {
+    log.info("canvas", "preloadSceneAssets: loading videos", { count: videoSrcs.length, srcs: videoSrcs.map(s => s.slice(-80)) });
+  }
+
+  await Promise.all([
+    ...imageSrcs.map((src) => preloadImage(src).catch(() => { })),
+    ...videoSrcs.map((src) => preloadVideo(src, projectDir).catch((e) => {
+      log.error("canvas", "preloadSceneAssets: video preload failed", { src: src.slice(-80), error: String(e) });
+    })),
+  ]);
 }
 
 function resolveMediaSrcLocal(ref: string | undefined, projectDir: string | null | undefined): string {
   if (!ref) return "";
   if (ref.startsWith("data:") || ref.startsWith("http") || ref.startsWith("blob:") || ref.startsWith("asset:")) return ref;
   if (projectDir) {
-    // Use Tauri's convertFileSrc equivalent — asset:// protocol
     return `asset://localhost/${projectDir}/${ref}`;
   }
   return ref;
@@ -220,7 +236,7 @@ function resolveFont(fontId: string | undefined, theme: ThemeNode): string {
 
 /* ─── Flex layout helper ─── */
 
-interface LayoutBox {
+export interface LayoutBox {
   x: number;
   y: number;
   w: number;
@@ -357,6 +373,8 @@ function drawText(
     textTransform?: string;
     letterSpacing?: number;
     language?: string;
+    textStrokeColor?: string;
+    textStrokeWidth?: number;
   },
 ) {
   if (!text) return;
@@ -378,6 +396,14 @@ function drawText(
     (ctx as any).letterSpacing = opts.letterSpacing ? `${opts.letterSpacing}px` : "0px";
   }
 
+  // Text stroke (outline) setup
+  const hasStroke = opts.textStrokeWidth && opts.textStrokeWidth > 0 && opts.textStrokeColor;
+  if (hasStroke) {
+    ctx.strokeStyle = opts.textStrokeColor!;
+    ctx.lineWidth = opts.textStrokeWidth! * 2; // CSS stroke is half inside, half outside
+    ctx.lineJoin = "round";
+  }
+
   const lh = opts.fontSize * (opts.lineHeight || 1.4);
   const words = displayText.split(/\s+/);
   let line = "";
@@ -387,6 +413,7 @@ function drawText(
   for (const word of words) {
     const test = line ? `${line} ${word}` : word;
     if (ctx.measureText(test).width > box.w && line) {
+      if (hasStroke) ctx.strokeText(line, xBase, y);
       ctx.fillText(line, xBase, y);
       y += lh;
       line = word;
@@ -394,7 +421,10 @@ function drawText(
       line = test;
     }
   }
-  if (line) ctx.fillText(line, xBase, y);
+  if (line) {
+    if (hasStroke) ctx.strokeText(line, xBase, y);
+    ctx.fillText(line, xBase, y);
+  }
   ctx.restore();
 }
 
@@ -426,6 +456,47 @@ function drawImage(
     const dh = img.naturalHeight * scale;
     ctx.drawImage(img, box.x + (box.w - dw) / 2, box.y + (box.h - dh) / 2, dw, dh);
   }
+  ctx.restore();
+}
+
+/**
+ * Draw a pre-extracted video frame (JPEG on disk → image cache → canvas).
+ * Fully synchronous once frames are extracted. No FFmpeg during playback.
+ */
+function drawVideoFrame(
+  ctx: CanvasRenderingContext2D,
+  el: SceneElement,
+  src: string,
+  box: LayoutBox,
+  borderRadius: number,
+  sceneTimeMs: number,
+  sceneDurationMs: number,
+) {
+  ctx.save();
+  if (borderRadius > 0) {
+    roundRect(ctx, box.x, box.y, box.w, box.h, borderRadius);
+    ctx.clip();
+  }
+
+  // Compute seek time with loop/trim
+  const enterMs = el.timing.enterMs;
+  const elapsedMs = Math.max(0, sceneTimeMs - enterMs);
+
+  const meta = getVideoMeta(src);
+  let seekTimeMs = elapsedMs;
+  if (meta) {
+    seekTimeMs = computeVideoSeekTime(
+      elapsedMs, meta.durationMs,
+      el.videoLoop ?? false, el.videoTrimLastFrame ?? false,
+    );
+  }
+
+  const drawn = drawVideoFrameToCanvas(ctx, src, seekTimeMs, box.x, box.y, box.w, box.h);
+  if (!drawn) {
+    ctx.fillStyle = "rgba(0,0,0,0.15)";
+    ctx.fillRect(box.x, box.y, box.w, box.h);
+  }
+
   ctx.restore();
 }
 
@@ -572,14 +643,21 @@ function drawElement(
         lineHeight: el.lineHeight,
         opacity: el.opacity,
         textTransform: el.textTransform,
-        letterSpacing: el.letterSpacing,
+        letterSpacing: anim?.letterSpacing ?? el.letterSpacing,
         language,
+        textStrokeColor: anim?.textStrokeColor ?? resolveColor(el.textStrokeColor, theme, scene),
+        textStrokeWidth: anim?.textStrokeWidth ?? el.textStrokeWidth,
       });
       break;
 
     case "image": {
       const src = resolveMediaSrcLocal(el.content, projectDir);
-      if (src) drawImage(ctx, src, box, el.borderRadius ?? theme.borderRadius, el.objectFit ?? "cover");
+      if (!src) break;
+      if (isVideoSrc(el.content)) {
+        drawVideoFrame(ctx, el, src, box, el.borderRadius ?? theme.borderRadius, sceneTimeMs ?? 0, scene.durationMs);
+      } else {
+        drawImage(ctx, src, box, el.borderRadius ?? theme.borderRadius, el.objectFit ?? "cover");
+      }
       break;
     }
 
@@ -867,12 +945,114 @@ function applyGlitchEffect(
   ctx.putImageData(imageData, 0, 0);
 }
 
+/* ─── Scene layout computation (used by hit-testing & selection overlay) ─── */
+
+export interface SceneElementLayout {
+  id: string;
+  box: LayoutBox;
+  visible: boolean;
+  rotation: number;      // degrees (static + animated)
+  scale: number;         // combined scale
+  opacity: number;       // final opacity
+}
+
+/**
+ * Compute the layout boxes and visibility of all elements in a scene
+ * at a given time. Used for hit-testing in the preview and drawing
+ * selection overlays. Requires a canvas context for text measurement.
+ */
+export function computeSceneLayout(
+  measureCtx: CanvasRenderingContext2D,
+  scene: VideoScene,
+  theme: ThemeNode,
+  assets: AssetItem[],
+  size: DocumentSize,
+  projectDir: string | null | undefined,
+  sceneTimeMs: number,
+): SceneElementLayout[] {
+  const w = size.width;
+  const h = size.height;
+  const padding = scene.padding ?? 0;
+  const results: SceneElementLayout[] = [];
+
+  for (const el of scene.elements) {
+    const anim = (el.timing.effects && el.timing.effects.length > 0)
+      ? computeEffects(el, sceneTimeMs, scene.durationMs)
+      : computeElementStyle(el, sceneTimeMs, scene.durationMs);
+
+    if (!anim.visible) {
+      results.push({ id: el.id, box: { x: 0, y: 0, w: 0, h: 0 }, visible: false, rotation: 0, scale: 1, opacity: 0 });
+      continue;
+    }
+
+    const sz = estimateElementSize(measureCtx, el, w - padding * 2, h - padding * 2, theme, assets, projectDir);
+    const needsAutoWidth = !el.sceneWidth && (
+      el.type === "text" || el.type === "button" || el.type === "list" ||
+      el.type === "counter" || el.type === "group"
+    );
+    if (needsAutoWidth && el.anchorX === 0.5) {
+      sz.w = Math.round(w * 0.9);
+    }
+
+    const ax = el.anchorX ?? 0;
+    const ay = el.anchorY ?? 0;
+    const box: LayoutBox = { x: (el.x ?? 0) - ax * sz.w, y: (el.y ?? 0) - ay * sz.h, w: sz.w, h: sz.h };
+
+    // Extract rotation and scale from anim transform string
+    let rotation = el.rotation ?? 0;
+    let totalScale = el.scale ?? 1;
+    const rotMatch = anim.transform.match(/rotate\(([^)]+)deg\)/);
+    if (rotMatch) rotation += parseFloat(rotMatch[1]);
+    const scaleMatch = anim.transform.match(/scale\(([^,)]+)/);
+    if (scaleMatch) totalScale *= parseFloat(scaleMatch[1]);
+
+    results.push({
+      id: el.id,
+      box,
+      visible: true,
+      rotation,
+      scale: totalScale,
+      opacity: (el.opacity ?? 1) * anim.opacity,
+    });
+  }
+
+  return results;
+}
+
 /* ─── Main render function ─── */
 
 /**
  * Render a scene at a given time directly to a canvas.
  * Returns in <5ms for typical scenes.
  */
+/**
+ * Seek all video elements in a scene to the correct frame time.
+ * Must be called (and awaited) before renderSceneToCanvas for each frame
+ * when the scene contains video elements.
+ */
+/**
+ * Ensure all video frames are extracted to disk for this scene.
+ * This is a no-op after the first call (frames stay on disk).
+ * No per-frame work — just ensures preloadVideo completed.
+ */
+export async function seekSceneVideos(
+  scene: VideoScene,
+  _sceneTimeMs: number,
+  projectDir: string | null | undefined,
+  _fps: number = 30,
+): Promise<void> {
+  // preloadVideo extracts all frames in one FFmpeg call — no per-frame work needed
+  // This is just an alias to ensure videos are preloaded. Called by export pipeline.
+  const promises: Promise<void>[] = [];
+  for (const el of scene.elements) {
+    if (el.type !== "image" || !isVideoSrc(el.content)) continue;
+    const src = resolveMediaSrcLocal(el.content, projectDir);
+    if (!src) continue;
+    promises.push(preloadVideo(src, projectDir).then(() => {}).catch(() => {}));
+  }
+  if (promises.length > 0) await Promise.all(promises);
+}
+
 export function renderSceneToCanvas(
   ctx: CanvasRenderingContext2D,
   scene: VideoScene,
@@ -954,6 +1134,21 @@ export function renderSceneToCanvas(
 
   let cursor = mainOffset;
 
+  // Build a map of element id → computed box for masking lookups
+  const elementBoxMap = new Map<string, LayoutBox>();
+
+  // First pass: compute all boxes (needed for maskElementId references)
+  for (const { el, size: sz } of visibleElements) {
+    const needsAutoWidth = !el.sceneWidth && (
+      el.type === "text" || el.type === "button" || el.type === "list" ||
+      el.type === "counter" || el.type === "group"
+    );
+    const elSzW = (needsAutoWidth && el.anchorX === 0.5) ? Math.round(w * 0.9) : sz.w;
+    const ax = el.anchorX ?? 0;
+    const ay = el.anchorY ?? 0;
+    elementBoxMap.set(el.id, { x: (el.x ?? 0) - ax * elSzW, y: (el.y ?? 0) - ay * sz.h, w: elSzW, h: sz.h });
+  }
+
   for (const { el, size: sz, anim } of visibleElements) {
     // Absolute positioning: use el.x/el.y with anchor offset
     // Auto-width for text-based elements without explicit sceneWidth (match DOM renderer)
@@ -971,6 +1166,21 @@ export function renderSceneToCanvas(
 
     // Apply transforms
     ctx.save();
+
+    // Blend mode (Canvas globalCompositeOperation)
+    if (el.blendMode && el.blendMode !== "normal") {
+      ctx.globalCompositeOperation = el.blendMode as GlobalCompositeOperation;
+    }
+
+    // Mask: clip to another element's bounding box
+    if (el.maskElementId) {
+      const maskBox = elementBoxMap.get(el.maskElementId);
+      if (maskBox) {
+        ctx.beginPath();
+        ctx.rect(maskBox.x, maskBox.y, maskBox.w, maskBox.h);
+        ctx.clip();
+      }
+    }
 
     const { transform, opacity: animOpacity, filter } = anim;
     ctx.globalAlpha *= (el.opacity ?? 1) * animOpacity;

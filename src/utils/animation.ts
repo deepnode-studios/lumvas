@@ -62,6 +62,9 @@ interface AnimState {
   color?: string;
   backgroundColor?: string;
   drawProgress?: number;
+  letterSpacing?: number;
+  textStrokeColor?: string;
+  textStrokeWidth?: number;
 }
 
 const IDENTITY: AnimState = { x: 0, y: 0, scale: 1, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1, blur: 0 };
@@ -107,6 +110,15 @@ function lerpState(from: AnimState, to: AnimState, t: number): AnimState {
     drawProgress: from.drawProgress !== undefined || to.drawProgress !== undefined
       ? ((from.drawProgress ?? 0) + ((to.drawProgress ?? 1) - (from.drawProgress ?? 0)) * t)
       : undefined,
+    letterSpacing: from.letterSpacing !== undefined || to.letterSpacing !== undefined
+      ? ((from.letterSpacing ?? 0) + ((to.letterSpacing ?? 0) - (from.letterSpacing ?? 0)) * t)
+      : undefined,
+    textStrokeColor: from.textStrokeColor && to.textStrokeColor
+      ? lerpColor(from.textStrokeColor, to.textStrokeColor, t)
+      : (to.textStrokeColor ?? from.textStrokeColor),
+    textStrokeWidth: from.textStrokeWidth !== undefined || to.textStrokeWidth !== undefined
+      ? ((from.textStrokeWidth ?? 0) + ((to.textStrokeWidth ?? 0) - (from.textStrokeWidth ?? 0)) * t)
+      : undefined,
   };
 }
 
@@ -138,6 +150,7 @@ function keyframeToState(p: KeyframeProperties): Partial<AnimState> {
     scale: p.scale, scaleX: p.scaleX, scaleY: p.scaleY,
     rotation: p.rotation, opacity: p.opacity, blur: p.blur,
     color: p.color, backgroundColor: p.backgroundColor, drawProgress: p.drawProgress,
+    letterSpacing: p.letterSpacing, textStrokeColor: p.textStrokeColor, textStrokeWidth: p.textStrokeWidth,
   };
 }
 
@@ -154,6 +167,9 @@ function lerpKeyframeProperties(a: KeyframeProperties, b: KeyframeProperties, t:
   if (a.color !== undefined || b.color !== undefined) result.color = lerpColor(a.color ?? b.color!, b.color ?? a.color!, t);
   if (a.backgroundColor !== undefined || b.backgroundColor !== undefined) result.backgroundColor = lerpColor(a.backgroundColor ?? b.backgroundColor!, b.backgroundColor ?? a.backgroundColor!, t);
   if (a.drawProgress !== undefined || b.drawProgress !== undefined) result.drawProgress = (a.drawProgress ?? 0) + ((b.drawProgress ?? 1) - (a.drawProgress ?? 0)) * t;
+  if (a.letterSpacing !== undefined || b.letterSpacing !== undefined) result.letterSpacing = (a.letterSpacing ?? 0) + ((b.letterSpacing ?? 0) - (a.letterSpacing ?? 0)) * t;
+  if (a.textStrokeColor !== undefined || b.textStrokeColor !== undefined) result.textStrokeColor = lerpColor(a.textStrokeColor ?? b.textStrokeColor!, b.textStrokeColor ?? a.textStrokeColor!, t);
+  if (a.textStrokeWidth !== undefined || b.textStrokeWidth !== undefined) result.textStrokeWidth = (a.textStrokeWidth ?? 0) + ((b.textStrokeWidth ?? 0) - (a.textStrokeWidth ?? 0)) * t;
   return result;
 }
 
@@ -189,6 +205,12 @@ export interface ComputedElementStyle {
   drawProgress?: number;
   /** True when the enter animation is a glitch preset */
   glitch?: boolean;
+  /** Animated letter spacing in px */
+  letterSpacing?: number;
+  /** Animated text stroke (outline) color */
+  textStrokeColor?: string;
+  /** Animated text stroke (outline) width in px */
+  textStrokeWidth?: number;
 }
 
 /**
@@ -254,6 +276,9 @@ export function computeElementStyle(
     if (kfState.color !== undefined) state.color = kfState.color;
     if (kfState.backgroundColor !== undefined) state.backgroundColor = kfState.backgroundColor;
     if (kfState.drawProgress !== undefined) state.drawProgress = kfState.drawProgress;
+    if (kfState.letterSpacing !== undefined) state.letterSpacing = kfState.letterSpacing;
+    if (kfState.textStrokeColor !== undefined) state.textStrokeColor = kfState.textStrokeColor;
+    if (kfState.textStrokeWidth !== undefined) state.textStrokeWidth = kfState.textStrokeWidth;
   }
 
   // Detect glitch preset (signals canvas renderer to apply post-process)
@@ -280,5 +305,8 @@ export function computeElementStyle(
     backgroundColor: state.backgroundColor,
     drawProgress: state.drawProgress,
     glitch: isGlitch || undefined,
+    letterSpacing: state.letterSpacing,
+    textStrokeColor: state.textStrokeColor,
+    textStrokeWidth: state.textStrokeWidth,
   };
 }

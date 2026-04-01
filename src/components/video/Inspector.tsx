@@ -8,6 +8,7 @@ import type {
 import { getEffectDefinition, EFFECT_DEFINITIONS } from "@/data/effectsLibrary";
 import { ColorPicker } from "@/components/ColorPicker";
 import { GradientEditor } from "@/components/GradientEditor";
+import { isVideoSrc } from "@/utils/videoCache";
 import styles from "./videoWorkspace.module.css";
 
 function uid(): string {
@@ -571,6 +572,32 @@ function ElementInspector({ sceneId, elementId }: { sceneId: string; elementId: 
                 {Math.round((el.opacity ?? 1) * 100)}%
               </span>
             </Row>
+            {isVideoSrc(el.content) && (
+              <>
+                <Row label="Loop">
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={el.videoLoop ?? false}
+                      onChange={(e) => updateSceneElement(sceneId, el.id, { videoLoop: e.target.checked })}
+                    />
+                    Auto-loop video
+                  </label>
+                </Row>
+                {el.videoLoop && (
+                  <Row label="Trim Last Frame">
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        checked={el.videoTrimLastFrame ?? false}
+                        onChange={(e) => updateSceneElement(sceneId, el.id, { videoTrimLastFrame: e.target.checked })}
+                      />
+                      Skip last frame (seamless loops)
+                    </label>
+                  </Row>
+                )}
+              </>
+            )}
           </>
         )}
 

@@ -28,6 +28,7 @@
     "fs:allow-copy-file",
     "fs:allow-exists",
     "opener:default",
-    "shell:default"
+    "shell:default",
+    "log:default"
   ]
 }

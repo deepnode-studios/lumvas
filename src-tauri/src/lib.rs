@@ -8,6 +8,20 @@ use tauri::{
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Clear previous session logs before the log plugin opens file handles.
+    // Tauri log plugin writes to $XDG_DATA_HOME/com.lumvas.app/logs/ on Linux.
+    if let Ok(home) = std::env::var("HOME") {
+        let log_dir = std::path::PathBuf::from(home)
+            .join(".local/share/com.lumvas.app/logs");
+        if log_dir.exists() {
+            if let Ok(entries) = std::fs::read_dir(&log_dir) {
+                for entry in entries.flatten() {
+                    let _ = std::fs::remove_file(entry.path());
+                }
+            }
+        }
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -18,19 +32,23 @@ pub fn run() {
             ffmpeg::mix_audio,
             ffmpeg::encode_video,
             ffmpeg::get_audio_duration,
+            ffmpeg::get_video_info,
+            ffmpeg::decode_video_frame,
+            ffmpeg::extract_video_frames,
             ffmpeg::start_video_pipe,
             ffmpeg::write_raw_frame,
             ffmpeg::finish_video_pipe,
             transcribe::transcribe_audio,
         ])
+        .plugin(
+            tauri_plugin_log::Builder::default()
+                .level(log::LevelFilter::Debug)
+                .max_file_size(10_000_000) // 10 MB per log file
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepAll)
+                .build(),
+        )
         .setup(|app| {
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
-            }
+            log::info!("═══ Lumvas session started ═══");
 
 
             // ── App menu (macOS only, first submenu) ──

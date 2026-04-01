@@ -51,6 +51,9 @@ interface EffectState {
   backgroundColor?: string;
   drawProgress?: number;
   glitch?: boolean;
+  letterSpacing?: number;
+  textStrokeColor?: string;
+  textStrokeWidth?: number;
 }
 
 const IDENTITY: EffectState = { x: 0, y: 0, scale: 1, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1, blur: 0 };
@@ -79,7 +82,8 @@ function interpolateKeyframes(keyframes: Keyframe[], progress: number): Partial<
 function propsToState(p: KeyframeProperties): Partial<EffectState> {
   return { x: p.x, y: p.y, scale: p.scale, scaleX: p.scaleX, scaleY: p.scaleY,
            rotation: p.rotation, opacity: p.opacity, blur: p.blur,
-           color: p.color, backgroundColor: p.backgroundColor, drawProgress: p.drawProgress };
+           color: p.color, backgroundColor: p.backgroundColor, drawProgress: p.drawProgress,
+           letterSpacing: p.letterSpacing, textStrokeColor: p.textStrokeColor, textStrokeWidth: p.textStrokeWidth };
 }
 
 function lerpProps(a: KeyframeProperties, b: KeyframeProperties, t: number): Partial<EffectState> {
@@ -97,6 +101,12 @@ function lerpProps(a: KeyframeProperties, b: KeyframeProperties, t: number): Par
     r.backgroundColor = lerpColor(a.backgroundColor ?? b.backgroundColor!, b.backgroundColor ?? a.backgroundColor!, t);
   if (a.drawProgress !== undefined || b.drawProgress !== undefined)
     r.drawProgress = lerp(a.drawProgress ?? 0, b.drawProgress ?? 1, t);
+  if (a.letterSpacing !== undefined || b.letterSpacing !== undefined)
+    r.letterSpacing = lerp(a.letterSpacing ?? 0, b.letterSpacing ?? 0, t);
+  if (a.textStrokeColor !== undefined || b.textStrokeColor !== undefined)
+    r.textStrokeColor = lerpColor(a.textStrokeColor ?? b.textStrokeColor!, b.textStrokeColor ?? a.textStrokeColor!, t);
+  if (a.textStrokeWidth !== undefined || b.textStrokeWidth !== undefined)
+    r.textStrokeWidth = lerp(a.textStrokeWidth ?? 0, b.textStrokeWidth ?? 0, t);
   return r;
 }
 
@@ -354,6 +364,22 @@ function applyEffect(
         if (kfState.color !== undefined) state.color = kfState.color;
         if (kfState.backgroundColor !== undefined) state.backgroundColor = kfState.backgroundColor;
         if (kfState.drawProgress !== undefined) state.drawProgress = kfState.drawProgress;
+        if (kfState.letterSpacing !== undefined) state.letterSpacing = (state.letterSpacing ?? 0) + kfState.letterSpacing;
+        if (kfState.textStrokeColor !== undefined) state.textStrokeColor = kfState.textStrokeColor;
+        if (kfState.textStrokeWidth !== undefined) state.textStrokeWidth = kfState.textStrokeWidth;
+        break;
+      }
+      case "boil": {
+        const amplitude = (p.amplitude as number | undefined) ?? 2;
+        const speed = (p.speed as number | undefined) ?? 12;
+        // Posterize time: snap to discrete frames for stop-motion feel
+        const snappedTime = Math.floor(timeS * speed) / speed;
+        // Deterministic pseudo-random jitter based on snapped time
+        const seedX = Math.sin(snappedTime * 127.1) * 43758.5453;
+        const seedY = Math.sin(snappedTime * 269.5) * 43758.5453;
+        state.x += (seedX % 1) * amplitude * 2 - amplitude;
+        state.y += (seedY % 1) * amplitude * 2 - amplitude;
+        state.rotation += (Math.sin(snappedTime * 311.7) * 43758.5453 % 1) * amplitude * 0.5 - amplitude * 0.25;
         break;
       }
     }
@@ -406,6 +432,9 @@ export function computeEffects(
     backgroundColor: state.backgroundColor,
     drawProgress: state.drawProgress,
     glitch: state.glitch ?? undefined,
+    letterSpacing: state.letterSpacing,
+    textStrokeColor: state.textStrokeColor,
+    textStrokeWidth: state.textStrokeWidth,
   };
 }
 

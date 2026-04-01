@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { renderSceneToCanvas } from "@/utils/canvasRenderer";
+import { renderSceneToCanvas, seekSceneVideos } from "@/utils/canvasRenderer";
 import type { VideoScene, ThemeNode, AssetItem, DocumentSize } from "@/types/schema";
 
 const THUMB_W = 128;
@@ -22,13 +22,16 @@ export function SceneThumbnail({ scene, theme, assets, size, projectDir, languag
 
   useEffect(() => {
     if (renderScheduled.current) clearTimeout(renderScheduled.current);
-    renderScheduled.current = setTimeout(() => {
+    renderScheduled.current = setTimeout(async () => {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
       const sceneTime = atMs ?? scene.durationMs / 2;
+
+      // Seek video elements before rendering
+      await seekSceneVideos(scene, sceneTime, projectDir ?? null);
 
       // Render at thumb size using canvas scale
       ctx.save();

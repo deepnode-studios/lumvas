@@ -14,10 +14,12 @@ import { usePlayback } from "@/hooks/usePlayback";
 import { useAudioPeaks } from "@/hooks/useAudioPeaks";
 import { resolveMediaSrc } from "@/utils/media";
 import { basename } from "@/utils/path";
-import { SceneRenderer } from "./SceneRenderer";
+import { CanvasPreview, QUALITY_OPTIONS, type CanvasPreviewHandle } from "./CanvasPreview";
+import { CacheIndicator } from "./CacheIndicator";
 import { MediaPool } from "./MediaPool";
 import { Inspector } from "./Inspector";
-import { PreviewOverlay } from "./preview/PreviewOverlay";
+import type { CacheState } from "@/utils/frameCache";
+import type { PreviewQuality } from "@/utils/frameCache";
 import { EffectsLibrary } from "./EffectsLibrary";
 import { KeyboardShortcuts } from "./KeyboardShortcuts";
 import { SceneThumbnail } from "./SceneThumbnail";
@@ -983,12 +985,17 @@ export function VideoWorkspace() {
   useMenuEvents();
   usePlayback();
 
+  // Logger is auto-initialized on import — logs go to:
+  //   Console (always) + ~/.local/share/com.lumvas.app/logs/ (Tauri)
+
   const theme = useLumvasStore((s) => s.theme);
   const assets = useLumvasStore((s) => s.assets.items);
   const size = useLumvasStore((s) => s.documentSize);
   const language = useLumvasStore((s) => s.language);
   const videoContent = useLumvasStore((s) => selectVideoContent(s));
   const projectDir = useFileStore((s) => s.currentFilePath);
+  // Expose for debug console
+  useEffect(() => { (window as any).__lumvasProjectDir = projectDir; }, [projectDir]);
   const isDirty = useFileStore((s) => s.isDirty);
   const currentFilePath = useFileStore((s) => s.currentFilePath);
   const fileName = currentFilePath ? basename(currentFilePath) : "Untitled";
@@ -1204,7 +1211,10 @@ export function VideoWorkspace() {
   const [previewScaleMode, setPreviewScaleMode] = useState<"fit" | "manual">("fit");
   const [manualScale, setManualScale] = useState(0.4);
   const [fitScale, setFitScale] = useState(0.4);
-  const [renderQuality, setRenderQuality] = useState<1 | 2>(1);
+  // Preview quality & cache state
+  const [previewQuality, setPreviewQuality] = useState<PreviewQuality>("half");
+  const [cacheState, setCacheState] = useState<CacheState | null>(null);
+  const previewRef = useRef<CanvasPreviewHandle>(null);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const fxOpen = useTimelineStore((s) => s.fxOpen);
 
@@ -1357,57 +1367,41 @@ export function VideoWorkspace() {
         <div className={styles.previewArea} onDrop={handlePreviewDrop} onDragOver={handlePreviewDragOver}>
           {currentScene ? (
             <div className={styles.canvasWrapper}>
-              <div
-                className={styles.canvasScale}
-                style={{
-                  width: size.width * previewScale,
-                  height: size.height * previewScale,
-                  position: "relative",
+              <CanvasPreview
+                ref={previewRef}
+                scene={currentScene}
+                theme={theme}
+                assets={assets}
+                size={size}
+                language={language}
+                projectDir={projectDir}
+                sceneTimeMs={sceneTime}
+                sceneStartMs={editingSceneId ? 0 : (currentSceneId ? getSceneStartMs(currentSceneId) : 0)}
+                previewScale={previewScale}
+                activeElementId={useLumvasStore.getState().activeElementId}
+                captionTracks={videoContent.captionTracks}
+                fps={videoContent.settings.fps}
+                quality={previewQuality}
+                onCacheStateChange={setCacheState}
+                onElementClick={(id) => {
+                  useLumvasStore.getState().setActiveScene(currentScene.id);
+                  useLumvasStore.getState().setActiveElement(id);
+                  useTimelineStore.getState().setInspectorTarget({ type: "element", sceneId: currentScene.id, elementId: id });
                 }}
-              >
-                <div
-                  style={{
-                    transform: `scale(${previewScale})`,
-                    transformOrigin: "top left",
-                    imageRendering: renderQuality === 2 ? "auto" : undefined,
-                  }}
-                >
-                  <SceneRenderer
-                    scene={currentScene}
-                    theme={theme}
-                    assets={assets}
-                    size={renderQuality === 2 ? { ...size, width: size.width * 2, height: size.height * 2 } : size}
-                    language={language}
-                    projectDir={projectDir}
-                    currentTimeMs={sceneTime}
-                    activeElementId={useLumvasStore.getState().activeElementId}
-                    onElementClick={(id) => {
-                      useLumvasStore.getState().setActiveScene(currentScene.id);
-                      useLumvasStore.getState().setActiveElement(id);
-                      useTimelineStore.getState().setInspectorTarget({ type: "element", sceneId: currentScene.id, elementId: id });
-                    }}
-                    previewScale={previewScale}
-                    onElementDragMove={(id, dx, dy) => {
-                      const el = currentScene.elements.find((e) => e.id === id);
-                      if (!el) return;
-                      useLumvasStore.getState().setActiveScene(currentScene.id);
-                      useLumvasStore.getState().setActiveElement(id);
-                      useLumvasStore.getState().updateSceneElement(currentScene.id, id, {
-                        x: (el.x ?? 0) + dx,
-                        y: (el.y ?? 0) + dy,
-                      });
-                    }}
-                    style={renderQuality === 2 ? { transform: "scale(0.5)", transformOrigin: "top left" } : undefined}
-                  />
-                  <PreviewOverlay
-                    captionTracks={videoContent.captionTracks}
-                    currentTimeMs={currentTimeMs}
-                    theme={theme}
-                    width={size.width}
-                    height={size.height}
-                  />
-                </div>
-              </div>
+                onBackgroundClick={() => {
+                  useLumvasStore.getState().setActiveElement(null);
+                }}
+                onElementDragMove={(id, dx, dy) => {
+                  const el = currentScene.elements.find((e) => e.id === id);
+                  if (!el) return;
+                  useLumvasStore.getState().setActiveScene(currentScene.id);
+                  useLumvasStore.getState().setActiveElement(id);
+                  useLumvasStore.getState().updateSceneElement(currentScene.id, id, {
+                    x: (el.x ?? 0) + dx,
+                    y: (el.y ?? 0) + dy,
+                  });
+                }}
+              />
             </div>
           ) : (
             <div className={styles.emptyState}>
@@ -1495,15 +1489,6 @@ export function VideoWorkspace() {
           <div style={{ width: 16 }} />
 
           <button
-            className={styles.speedSelector}
-            onClick={() => setRenderQuality((q) => (q === 1 ? 2 : 1))}
-            title="Preview render quality (1x = fast, 2x = crisp)"
-            style={renderQuality === 2 ? { color: "#4ecdc4", borderColor: "#4ecdc4" } : undefined}
-          >
-            {renderQuality}x
-          </button>
-
-          <button
             className={styles.transportBtn}
             onClick={() => useTimelineStore.getState().toggleFx()}
             title="Effects Library (FX)"
@@ -1511,6 +1496,47 @@ export function VideoWorkspace() {
           >
             ✦ FX
           </button>
+
+          <div style={{ width: 16 }} />
+
+          {/* Preview quality */}
+          <select
+            className={styles.speedSelector}
+            value={previewQuality}
+            onChange={(e) => setPreviewQuality(e.target.value as PreviewQuality)}
+            title="Preview render quality"
+            style={{ fontSize: 10, padding: "2px 4px", cursor: "pointer" }}
+          >
+            {QUALITY_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+
+          {/* RAM Preview render */}
+          <button
+            className={styles.transportBtn}
+            onClick={() => previewRef.current?.startRendering()}
+            title="Render RAM preview (cache frames for real-time playback)"
+            style={cacheState?.isRendering ? { color: "#4ade80", borderColor: "#4ade80" } : undefined}
+          >
+            {cacheState?.isRendering ? "◼" : "▶"} RAM
+          </button>
+
+          {/* Purge */}
+          <button
+            className={styles.transportBtn}
+            onClick={() => previewRef.current?.purgeAll()}
+            title={`Purge RAM cache (${cacheState ? Math.round(cacheState.usedBytes / 1024 / 1024) : 0} MB used)`}
+          >
+            ✕ Purge
+          </button>
+
+          {/* Memory usage */}
+          {cacheState && cacheState.usedBytes > 0 && (
+            <span style={{ fontSize: 9, color: "#666", fontFamily: "var(--font-mono)", marginLeft: 4 }}>
+              {Math.round(cacheState.usedBytes / 1024 / 1024)}MB
+            </span>
+          )}
         </div>
       </main>
 
@@ -1584,6 +1610,13 @@ export function VideoWorkspace() {
           zoomLevel={zoomLevel}
           currentTimeMs={currentTimeMs}
           onSeek={seekTo}
+        />
+
+        {/* RAM cache indicator bar */}
+        <CacheIndicator
+          cacheState={cacheState}
+          totalDurationMs={totalDuration}
+          zoomLevel={zoomLevel}
         />
 
         {/* Multi-track area */}

@@ -54,6 +54,24 @@ export interface ThemeNode {
 
 /* ─── Element system ─── */
 
+export type BlendMode =
+  | "normal"
+  | "multiply"
+  | "screen"
+  | "overlay"
+  | "darken"
+  | "lighten"
+  | "color-dodge"
+  | "color-burn"
+  | "hard-light"
+  | "soft-light"
+  | "difference"
+  | "exclusion"
+  | "hue"
+  | "saturation"
+  | "color"
+  | "luminosity";
+
 export type ElementType =
   | "text"
   | "image"
@@ -99,15 +117,22 @@ export interface SlideElement {
   lineHeight?: number;
   opacity?: number;
   textTransform?: "none" | "uppercase" | "lowercase" | "capitalize";
+  textStrokeColor?: string;  // text outline color (token or hex)
+  textStrokeWidth?: number;  // text outline width in px
+
+  // Blending
+  blendMode?: BlendMode; // compositing blend mode (CSS mix-blend-mode / Canvas globalCompositeOperation)
 
   // Sizing
   maxWidth?: string; // "100%", "80%", "600px"
   width?: string;
   height?: string;
 
-  // Image specific
+  // Image / video specific
   objectFit?: "cover" | "contain" | "fill";
   borderRadius?: number;
+  videoLoop?: boolean;          // auto-loop video content to fill the element's timeline
+  videoTrimLastFrame?: boolean; // skip last frame when looping (for seamless-loop videos where first == last frame)
 
   // Button specific
   backgroundColor?: string;
@@ -292,6 +317,9 @@ export interface KeyframeProperties {
   color?: string;           // interpolated text/stroke color (hex)
   backgroundColor?: string; // interpolated background color (hex)
   drawProgress?: number;    // 0–1: fraction of path/stroke drawn (for "path" elements)
+  letterSpacing?: number;       // px — animated letter spacing (cinematic tracking)
+  textStrokeColor?: string;     // hex — animated text stroke color
+  textStrokeWidth?: number;     // px — animated text stroke width (0 = no stroke)
 }
 
 export interface Keyframe {
@@ -406,6 +434,9 @@ export interface SceneElement extends SlideElement {
   scaleY?: number;
   // Rotation in degrees
   rotation?: number;
+  // Masking: ID of another element in the same scene that masks (clips) this element.
+  // The mask element's visual shape defines the visible area of this element.
+  maskElementId?: string;
 }
 
 /* Scene transitions */

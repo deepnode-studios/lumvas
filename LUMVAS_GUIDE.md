@@ -177,6 +177,9 @@ All 14 element types and their specific properties:
   "lineHeight": 1.4,
   "opacity": 1.0,
   "textTransform": "uppercase",      // "none" | "uppercase" | "lowercase" | "capitalize"
+  "textStrokeColor": "#ffffff",      // Text outline color (token or hex)
+  "textStrokeWidth": 2,             // Text outline width in px
+  "blendMode": "overlay",           // Compositing blend mode (see Blend Modes below)
   "maxWidth": "80%",                 // CSS value
   "width": "100%"
 }
@@ -565,6 +568,7 @@ Elements can have multiple effects stacked. They compose additively:
 | `wiggle` | Wiggle | `amplitude` (1-45deg, def 5), `speed` (0.5-10, def 3) | Rotation oscillation |
 | `rotate-loop` | Rotate Loop | `speed` (10-1080 deg/s, def 90), `direction` (cw/ccw) | Continuous rotation |
 | `bounce-loop` | Bounce Loop | `amplitude` (1-100px, def 20), `speed` (0.1-5, def 1) | Vertical bounce |
+| `boil` | Boil | `amplitude` (0.5-10px, def 2), `speed` (2-24fps, def 8) | Stop-motion jitter — random position/rotation wobble at a reduced frame rate for a hand-drawn, organic feel |
 
 ### Filter Effects (Lifetime)
 
@@ -664,6 +668,28 @@ For `custom-keyframes` effect or legacy `timing.keyframes`:
 | `color` | hex string | Text/stroke color (interpolated) |
 | `backgroundColor` | hex string | Background color (interpolated) |
 | `drawProgress` | 0-1 | Path draw reveal progress |
+| `letterSpacing` | number (px) | Animated letter spacing (cinematic tracking) |
+| `textStrokeColor` | hex string | Animated text outline color |
+| `textStrokeWidth` | number (px) | Animated text outline width (0 = no stroke) |
+
+---
+
+## 12b. Blend Modes
+
+Any element can use `"blendMode"` to control how it composites with the video beneath it. Supported values: `"normal"`, `"multiply"`, `"screen"`, `"overlay"`, `"darken"`, `"lighten"`, `"color-dodge"`, `"color-burn"`, `"hard-light"`, `"soft-light"`, `"difference"`, `"exclusion"`, `"hue"`, `"saturation"`, `"color"`, `"luminosity"`.
+
+## 12c. Element Masking
+
+Scene elements support `"maskElementId"` — the ID of another element in the same scene. The mask element's bounding box clips the masked element, creating depth effects where foreground objects appear *in front of* text (spatial integration).
+
+```jsonc
+{
+  "id": "title-text",
+  "type": "text",
+  "content": "EXPLORE",
+  "maskElementId": "person-image"  // this text is clipped to the person image's bounds
+}
+```
 
 ---
 

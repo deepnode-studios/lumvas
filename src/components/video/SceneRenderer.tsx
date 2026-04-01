@@ -1,4 +1,4 @@
-import React, { forwardRef } from "react";
+import React, { forwardRef, useCallback, useEffect, useRef, useState } from "react";
 import type {
   VideoScene,
   SceneElement,
@@ -9,6 +9,7 @@ import type {
 import { computeElementStyle } from "@/utils/animation";
 import { computeEffects, hasTypewriterEffect, getTypewriterParams, computeTranslationVelocity } from "@/utils/effectsRenderer";
 import { resolveMediaSrc } from "@/utils/media";
+import { isVideoSrc, getOrCreateVideo, computeVideoSeekTime } from "@/utils/videoCache";
 
 /* ─── DOM path length cache (reuses real SVG measurements) ─── */
 const domPathLenCache = new Map<string, number>();
@@ -234,6 +235,7 @@ function AnimatedElement({
         visibility: visible ? "visible" : "hidden",
         pointerEvents: visible ? undefined : "none",
         willChange: "transform, opacity, filter",
+        mixBlendMode: element.blendMode && element.blendMode !== "normal" ? element.blendMode : undefined,
         ...(visible ? activeOutline : {}),
         cursor: visible ? (onDragMove ? "grab" : onClick ? "pointer" : undefined) : undefined,
       }}
@@ -288,6 +290,9 @@ function AnimatedElement({
         drawProgress: computed.drawProgress,
         sceneTimeMs,
         sceneDurationMs,
+        animLetterSpacing: computed.letterSpacing,
+        animTextStrokeColor: computed.textStrokeColor,
+        animTextStrokeWidth: computed.textStrokeWidth,
       })}
     </div>
   );
@@ -444,8 +449,90 @@ function GroupChildElement({
         drawProgress: computed.drawProgress,
         sceneTimeMs,
         sceneDurationMs,
+        animLetterSpacing: computed.letterSpacing,
+        animTextStrokeColor: computed.textStrokeColor,
+        animTextStrokeWidth: computed.textStrokeWidth,
       })}
     </div>
+  );
+}
+
+/** Synced video element — seeks the DOM <video> to the correct frame on each timeline tick */
+function VideoElement({
+  src,
+  style,
+  sceneTimeMs,
+  enterMs,
+  videoLoop,
+  videoTrimLastFrame,
+}: {
+  src: string;
+  style: React.CSSProperties;
+  sceneTimeMs: number;
+  enterMs: number;
+  videoLoop?: boolean;
+  videoTrimLastFrame?: boolean;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [ready, setReady] = useState(false);
+  const [effectiveSrc, setEffectiveSrc] = useState(src);
+
+  // Load video — try direct src first, fall back to blob URL if CSP blocks it
+  useEffect(() => {
+    setReady(false);
+    const video = videoRef.current;
+    if (!video) return;
+    let blobUrl: string | null = null;
+
+    const onLoaded = () => setReady(true);
+    const onError = () => {
+      // Direct src failed (likely CSP) — fetch as blob and use blob URL
+      fetch(src)
+        .then((r) => r.blob())
+        .then((blob) => {
+          blobUrl = URL.createObjectURL(blob);
+          setEffectiveSrc(blobUrl);
+        })
+        .catch(() => { /* video truly unavailable */ });
+    };
+
+    video.addEventListener("loadedmetadata", onLoaded);
+    video.addEventListener("error", onError, { once: true });
+    return () => {
+      video.removeEventListener("loadedmetadata", onLoaded);
+      video.removeEventListener("error", onError);
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+    };
+  }, [src]);
+
+  // Update effective src when original src changes
+  useEffect(() => { setEffectiveSrc(src); }, [src]);
+
+  // Seek when timeline updates (only after metadata is available)
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !ready || !video.duration) return;
+    const elapsedMs = Math.max(0, sceneTimeMs - enterMs);
+    const seekTime = computeVideoSeekTime(
+      elapsedMs,
+      video.duration,
+      videoLoop ?? false,
+      videoTrimLastFrame ?? false,
+    );
+    if (Math.abs(video.currentTime - seekTime) > 0.02) {
+      video.currentTime = seekTime;
+    }
+  }, [ready, sceneTimeMs, enterMs, videoLoop, videoTrimLastFrame]);
+
+  return (
+    <video
+      ref={videoRef}
+      src={effectiveSrc}
+      muted
+      playsInline
+      preload="auto"
+      style={style}
+    />
   );
 }
 
@@ -464,6 +551,9 @@ function renderElementContent(
     drawProgress?: number;
     sceneTimeMs?: number;
     sceneDurationMs?: number;
+    animLetterSpacing?: number;
+    animTextStrokeColor?: string;
+    animTextStrokeWidth?: number;
   },
 ) {
   switch (el.type) {
@@ -497,6 +587,8 @@ function renderElementContent(
           </>
         );
       }
+      const strokeColor = ctx.animTextStrokeColor ?? el.textStrokeColor;
+      const strokeWidth = ctx.animTextStrokeWidth ?? el.textStrokeWidth;
       return (
         <div
           style={{
@@ -505,14 +597,16 @@ function renderElementContent(
             fontWeight: el.fontWeight ?? ctx.fontWeight,
             fontFamily: resolveFont(el.fontId, ctx.theme),
             textAlign: el.textAlign ?? "left",
-            letterSpacing: el.letterSpacing,
+            letterSpacing: ctx.animLetterSpacing ?? el.letterSpacing,
             lineHeight: el.lineHeight,
             opacity: el.opacity,
             textTransform: el.textTransform,
             maxWidth: el.maxWidth,
             width: el.width,
             whiteSpace: "pre-wrap",
-          }}
+            WebkitTextStroke: strokeWidth && strokeColor ? `${strokeWidth}px ${strokeColor}` : undefined,
+            paintOrder: strokeWidth ? "stroke fill" : undefined,
+          } as React.CSSProperties}
         >
           {displayContent}
         </div>
@@ -523,21 +617,30 @@ function renderElementContent(
       const src = resolveMediaSrc(el.content, ctx.projectDir);
       // When sceneWidth/sceneHeight controls the wrapper, fill it completely
       const hasSceneSize = el.sceneWidth || el.sceneHeight;
-      return src ? (
-        <img
-          src={src}
-          alt=""
-          style={{
-            width: el.width ?? (hasSceneSize ? "100%" : "100%"),
-            height: el.height ?? (hasSceneSize ? "100%" : "auto"),
-            objectFit: el.objectFit ?? "cover",
-            borderRadius: el.borderRadius ?? ctx.theme.borderRadius,
-            display: "block",
-          }}
-        />
-      ) : (
-        <div style={{ width: el.width ?? "100%", height: el.height ?? 200, background: "#e0e0e4", borderRadius: ctx.theme.borderRadius }} />
-      );
+      if (!src) {
+        return <div style={{ width: el.width ?? "100%", height: el.height ?? 200, background: "#e0e0e4", borderRadius: ctx.theme.borderRadius }} />;
+      }
+      const imgStyle: React.CSSProperties = {
+        width: el.width ?? (hasSceneSize ? "100%" : "100%"),
+        height: el.height ?? (hasSceneSize ? "100%" : "auto"),
+        objectFit: el.objectFit ?? "cover",
+        borderRadius: el.borderRadius ?? ctx.theme.borderRadius,
+        display: "block",
+      };
+      // Video source: render synced <video> element
+      if (isVideoSrc(el.content)) {
+        return (
+          <VideoElement
+            src={src}
+            style={imgStyle}
+            sceneTimeMs={ctx.sceneTimeMs ?? 0}
+            enterMs={el.timing?.enterMs ?? 0}
+            videoLoop={el.videoLoop}
+            videoTrimLastFrame={el.videoTrimLastFrame}
+          />
+        );
+      }
+      return <img src={src} alt="" style={imgStyle} />;
     }
 
     case "logo": {

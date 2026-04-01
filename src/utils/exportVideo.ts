@@ -1,7 +1,7 @@
 import { useLumvasStore, selectVideoContent } from "@/store/useLumvasStore";
 import { useExportStore } from "@/store/useExportStore";
 import { getLastDialogPath, setLastDialogPath, revealInFolder } from "./dialogPath";
-import { renderSceneToCanvas, renderCaptionsToCanvas, preloadSceneAssets } from "./canvasRenderer";
+import { renderSceneToCanvas, renderCaptionsToCanvas, preloadSceneAssets, seekSceneVideos } from "./canvasRenderer";
 import { applySceneTransition } from "./sceneTransition";
 import type { VideoScene } from "@/types/schema";
 
@@ -163,6 +163,9 @@ export async function confirmExport() {
       }
       if (!scene) continue;
 
+      // Seek video elements to the correct frame time before rendering
+      await seekSceneVideos(scene, sceneTimeMs, projectDir, vc.settings.fps);
+
       // Render directly to canvas — <5ms per frame
       renderSceneToCanvas(ctx, scene, theme, assets, originalSize, projectDir, sceneTimeMs, language);
 
@@ -186,6 +189,7 @@ export async function confirmExport() {
           tempCanvas.height = renderHeight;
           const tempCtx = tempCanvas.getContext("2d")!;
           if (exportScale !== 1) tempCtx.scale(exportScale, exportScale);
+          await seekSceneVideos(nextScene, Math.max(0, nextSceneTimeMs), projectDir, vc.settings.fps);
           renderSceneToCanvas(tempCtx, nextScene, theme, assets, originalSize, projectDir, Math.max(0, nextSceneTimeMs), language);
           applySceneTransition(ctx, tempCanvas, scene.transition, progress, renderWidth, renderHeight);
         }
