@@ -324,14 +324,31 @@ function ElementInspector({ sceneId, elementId }: { sceneId: string; elementId: 
   const moveSceneElementToGroup = useLumvasStore((s) => s.moveSceneElementToGroup);
   const documentSize = useLumvasStore((s) => s.documentSize);
 
-  const scene = vc.scenes.find((s) => s.id === sceneId);
-  const el = scene ? findSceneElementDeep(scene.elements, elementId) : null;
-  if (!scene || !el) return <EmptyInspector message="Element not found" />;
+  // Find the element — search scenes first, then compositions
+  let scene = vc.scenes.find((s) => s.id === sceneId);
+  let el = scene ? findSceneElementDeep(scene.elements, elementId) : null;
+
+  // Composition mode: search all composition layers for the element
+  if (!el && vc.compositions) {
+    for (const comp of vc.compositions) {
+      for (const layer of comp.layers) {
+        if (layer.source.type === "element" && layer.source.element.id === elementId) {
+          el = layer.source.element;
+          // Create a fake scene for backward compat with the inspector
+          scene = { id: comp.id, durationMs: comp.durationMs, elements: [layer.source.element] } as any;
+          break;
+        }
+      }
+      if (el) break;
+    }
+  }
+
+  if (!el || !scene) return <EmptyInspector message="Element not found" />;
 
   // Find all groups in this scene (for "move to group" dropdown)
-  const allGroups = flattenSceneElements(scene.elements).filter(
+  const allGroups = scene ? flattenSceneElements(scene.elements).filter(
     (e) => e.type === "group" && e.id !== elementId
-  );
+  ) : [];
 
   return (
     <>
@@ -1883,8 +1900,11 @@ export function Inspector() {
   const currentTimeMs = useTimelineStore((s) => s.currentTimeMs);
   const vc = useLumvasStore((s) => selectVideoContent(s));
 
-  // Auto-select current scene if nothing is selected
+  // Auto-select: in composition mode show nothing (user picks from timeline), in legacy show current scene
   if (!target) {
+    if (vc.compositions && vc.compositions.length > 0) {
+      return <EmptyInspector message="Select a layer in the timeline" />;
+    }
     const sceneId = getSceneAtTime(currentTimeMs);
     if (sceneId) {
       const idx = vc.scenes.findIndex((s) => s.id === sceneId);
@@ -1896,8 +1916,17 @@ export function Inspector() {
 
   switch (target.type) {
     case "scene": {
-      const idx = vc.scenes.findIndex((s) => s.id === target.sceneId);
-      const scene = vc.scenes[idx];
+      // Try scenes first, then compositions
+      let idx = vc.scenes.findIndex((s) => s.id === target.sceneId);
+      let scene = vc.scenes[idx];
+      if (!scene && vc.compositions) {
+        const comp = vc.compositions.find((c) => c.id === target.sceneId);
+        if (comp) {
+          // Wrap composition as a fake scene for the SceneInspector
+          scene = { id: comp.id, durationMs: comp.durationMs, elements: [], style: comp.style } as any;
+          idx = vc.compositions.indexOf(comp);
+        }
+      }
       if (!scene) return <EmptyInspector message="Scene not found" />;
       return <SceneInspector scene={scene} sceneIndex={idx} />;
     }

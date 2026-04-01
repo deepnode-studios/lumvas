@@ -110,6 +110,68 @@ export async function preloadSceneAssets(
   ]);
 }
 
+/** Pre-load all assets referenced in a composition tree (recursive) */
+export async function preloadCompositionAssets(
+  compositionId: string,
+  compositions: Map<string, Composition>,
+  assets: AssetItem[],
+  projectDir: string | null | undefined,
+  visited: Set<string> = new Set(),
+): Promise<void> {
+  if (visited.has(compositionId)) return;
+  visited.add(compositionId);
+  const comp = compositions.get(compositionId);
+  if (!comp) return;
+
+  const srcs = new Set<string>();
+
+  function collectFromElement(el: SceneElement) {
+    if (el.type === "image" && el.content) {
+      srcs.add(resolveMediaSrcLocal(el.content, projectDir));
+    }
+    if (el.type === "logo") {
+      const asset = el.assetId ? assets.find((a) => a.id === el.assetId) : assets[0];
+      if (asset?.data) srcs.add(resolveMediaSrcLocal(asset.data, projectDir));
+    }
+    if (el.type === "svg" && el.content) {
+      srcs.add(svgMarkupToDataUrl(el.content));
+    }
+    if (el.children) el.children.forEach(collectFromElement);
+  }
+
+  // Collect from all element layers
+  const childCompIds: string[] = [];
+  for (const layer of comp.layers) {
+    if (layer.source.type === "element") {
+      collectFromElement(layer.source.element);
+    } else if (layer.source.type === "composition") {
+      childCompIds.push(layer.source.compositionId);
+    }
+  }
+
+  // Load images and videos
+  const imageSrcs: string[] = [];
+  const videoSrcs: string[] = [];
+  for (const src of srcs) {
+    if (!src) continue;
+    if (isVideoSrc(src)) videoSrcs.push(src);
+    else imageSrcs.push(src);
+  }
+
+  if (videoSrcs.length > 0) {
+    log.info("canvas", "preloadCompositionAssets: loading videos", { compId: compositionId, count: videoSrcs.length });
+  }
+
+  await Promise.all([
+    ...imageSrcs.map((src) => preloadImage(src).catch(() => {})),
+    ...videoSrcs.map((src) => preloadVideo(src, projectDir).catch((e) => {
+      log.error("canvas", "preloadCompositionAssets: video preload failed", { src: src.slice(-80), error: String(e) });
+    })),
+    // Recursively preload child compositions
+    ...childCompIds.map((id) => preloadCompositionAssets(id, compositions, assets, projectDir, visited)),
+  ]);
+}
+
 function resolveMediaSrcLocal(ref: string | undefined, projectDir: string | null | undefined): string {
   if (!ref) return "";
   if (ref.startsWith("data:") || ref.startsWith("http") || ref.startsWith("blob:") || ref.startsWith("asset:")) return ref;
@@ -405,25 +467,35 @@ function drawText(
   }
 
   const lh = opts.fontSize * (opts.lineHeight || 1.4);
-  const words = displayText.split(/\s+/);
-  let line = "";
   let y = box.y;
   const xBase = opts.textAlign === "center" ? box.x + box.w / 2 : opts.textAlign === "right" ? box.x + box.w : box.x;
 
-  for (const word of words) {
-    const test = line ? `${line} ${word}` : word;
-    if (ctx.measureText(test).width > box.w && line) {
+  // Split by explicit newlines first, then word-wrap each line
+  const paragraphs = displayText.split("\n");
+  for (const paragraph of paragraphs) {
+    const words = paragraph.split(/\s+/).filter(Boolean);
+    if (words.length === 0) {
+      // Empty line (bare \n)
+      y += lh;
+      continue;
+    }
+    let line = "";
+    for (const word of words) {
+      const test = line ? `${line} ${word}` : word;
+      if (ctx.measureText(test).width > box.w && line) {
+        if (hasStroke) ctx.strokeText(line, xBase, y);
+        ctx.fillText(line, xBase, y);
+        y += lh;
+        line = word;
+      } else {
+        line = test;
+      }
+    }
+    if (line) {
       if (hasStroke) ctx.strokeText(line, xBase, y);
       ctx.fillText(line, xBase, y);
       y += lh;
-      line = word;
-    } else {
-      line = test;
     }
-  }
-  if (line) {
-    if (hasStroke) ctx.strokeText(line, xBase, y);
-    ctx.fillText(line, xBase, y);
   }
   ctx.restore();
 }
@@ -1052,6 +1124,153 @@ export async function seekSceneVideos(
   }
   if (promises.length > 0) await Promise.all(promises);
 }
+
+/* ─── Composition renderer ─── */
+
+import type { Composition, CompLayer, VideoContentNode } from "@/types/schema";
+
+/** Build a composition lookup map from VideoContentNode */
+export function buildCompositionMap(vc: VideoContentNode): Map<string, Composition> {
+  const map = new Map<string, Composition>();
+  if (vc.compositions) {
+    for (const comp of vc.compositions) map.set(comp.id, comp);
+  }
+  return map;
+}
+
+/**
+ * Render a composition at a given time. Supports recursive nesting.
+ * This is the single entry point for ALL rendering — preview, export, thumbnails.
+ */
+export function renderComposition(
+  ctx: CanvasRenderingContext2D,
+  compositionId: string,
+  compositions: Map<string, Composition>,
+  theme: ThemeNode,
+  assets: AssetItem[],
+  size: DocumentSize,
+  projectDir: string | null | undefined,
+  timeMs: number,
+  language?: string,
+  depth: number = 0,
+): void {
+  if (depth > 10) return; // recursion guard
+
+  const comp = compositions.get(compositionId);
+  if (!comp) return;
+
+  const w = comp.width ?? size.width;
+  const h = comp.height ?? size.height;
+
+  // Background
+  if (depth === 0 || comp.style) {
+    ctx.save();
+    const bgColor = comp.style?.backgroundColor ?? theme.backgroundColor;
+    if (bgColor) {
+      ctx.fillStyle = bgColor;
+      ctx.fillRect(0, 0, w, h);
+    }
+    const gradientCss = comp.style?.backgroundGradient;
+    if (gradientCss) {
+      const grad = parseCssGradient(gradientCss, w, h, ctx);
+      if (grad) { ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h); }
+    }
+    ctx.restore();
+  }
+
+  // Render layers bottom to top
+  for (const layer of comp.layers) {
+    if (layer.enabled === false) continue;
+    if (timeMs < layer.startMs || timeMs > layer.startMs + layer.durationMs) continue;
+
+    const layerLocalTime = timeMs - layer.startMs;
+
+    ctx.save();
+    if (layer.opacity !== undefined && layer.opacity < 1) ctx.globalAlpha *= layer.opacity;
+    if (layer.blendMode && layer.blendMode !== "normal") {
+      ctx.globalCompositeOperation = layer.blendMode as GlobalCompositeOperation;
+    }
+
+    switch (layer.source.type) {
+      case "element": {
+        // Render element — remap timing so enterMs=0 within the layer
+        // (the layer itself handles start/duration positioning)
+        const origEl = layer.source.element;
+        const el = {
+          ...origEl,
+          timing: {
+            ...origEl.timing,
+            enterMs: 0,
+            exitMs: layer.durationMs,
+          },
+        };
+        const anim = (el.timing.effects && el.timing.effects.length > 0)
+          ? computeEffects(el as SceneElement, layerLocalTime, layer.durationMs)
+          : computeElementStyle(el as SceneElement, layerLocalTime, layer.durationMs);
+
+        if (anim.visible) {
+          const sz = estimateElementSize(ctx, el, w, h, theme, assets, projectDir);
+          // Auto-width for text-based elements
+          if (!el.sceneWidth && (el.type === "text" || el.type === "button" || el.type === "list" || el.type === "counter" || el.type === "group")) {
+            if (el.anchorX === 0.5) sz.w = Math.round(w * 0.9);
+          }
+          const ax = el.anchorX ?? 0;
+          const ay = el.anchorY ?? 0;
+          const box: LayoutBox = { x: (el.x ?? 0) - ax * sz.w, y: (el.y ?? 0) - ay * sz.h, w: sz.w, h: sz.h };
+
+          ctx.save();
+          // Apply animation transforms
+          const { transform, opacity: animOpacity, filter } = anim;
+          ctx.globalAlpha *= (el.opacity ?? 1) * animOpacity;
+          const cx = box.x + box.w / 2;
+          const cy = box.y + box.h / 2;
+          ctx.translate(cx, cy);
+          if (el.scale != null && el.scale !== 1) ctx.scale(el.scale, el.scale);
+          else if (el.scaleX != null || el.scaleY != null) ctx.scale(el.scaleX ?? 1, el.scaleY ?? 1);
+          if (el.rotation) ctx.rotate((el.rotation * Math.PI) / 180);
+          const translateMatch = transform.match(/translate\(([^,]+)px,\s*([^)]+)px\)/);
+          if (translateMatch) ctx.translate(parseFloat(translateMatch[1]), parseFloat(translateMatch[2]));
+          const scaleMatch = transform.match(/scale\(([^,)]+)(?:,\s*([^)]+))?\)/);
+          if (scaleMatch) { const sx = parseFloat(scaleMatch[1]); ctx.scale(sx, scaleMatch[2] ? parseFloat(scaleMatch[2]) : sx); }
+          const rotateMatch = transform.match(/rotate\(([^)]+)deg\)/);
+          if (rotateMatch) ctx.rotate((parseFloat(rotateMatch[1]) * Math.PI) / 180);
+          ctx.translate(-cx, -cy);
+          const blurMatch = filter.match(/blur\(([^)]+)px\)/);
+          if (blurMatch) ctx.filter = `blur(${blurMatch[1]}px)`;
+
+          // Element blend mode
+          if (el.blendMode && el.blendMode !== "normal") {
+            ctx.globalCompositeOperation = el.blendMode as GlobalCompositeOperation;
+          }
+
+          drawElement(ctx, el, box, theme, { id: comp.id, durationMs: comp.durationMs, elements: [], style: comp.style } as any, assets, projectDir, anim, layerLocalTime, language);
+          ctx.restore();
+        }
+        break;
+      }
+
+      case "composition": {
+        // Recurse into nested composition
+        const nestedComp = compositions.get(layer.source.compositionId);
+        if (nestedComp) {
+          // Map layer local time to nested comp time (clamp to nested duration)
+          const nestedTime = Math.min(layerLocalTime, nestedComp.durationMs);
+          renderComposition(ctx, layer.source.compositionId, compositions, theme, assets, size, projectDir, nestedTime, language, depth + 1);
+        }
+        break;
+      }
+
+      case "audio":
+      case "caption":
+        // Audio/caption layers are not rendered visually here
+        break;
+    }
+
+    ctx.restore();
+  }
+}
+
+/* ─── Legacy wrapper ─── */
 
 export function renderSceneToCanvas(
   ctx: CanvasRenderingContext2D,

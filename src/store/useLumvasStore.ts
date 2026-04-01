@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { needsMigration, migrateScenesToCompositions } from "@/utils/migrateToCompositions";
 import type {
   LumvasDocument,
   DocumentSize,
@@ -693,9 +694,23 @@ export function selectSlideContent(state: LumvasStore): ContentNode {
   return state.content as ContentNode;
 }
 
-/** Typed selector: use in components to get video content */
-export function selectVideoContent(state: LumvasStore): VideoContentNode {
-  return state.content as VideoContentNode;
+const EMPTY_SCENES: VideoScene[] = [];
+
+/** Typed selector: use in components to get video content.
+ *  Returns stable reference — safe for Zustand selectors. */
+export function selectVideoContent(state: LumvasStore): VideoContentNode & { scenes: VideoScene[] } {
+  const vc = state.content as VideoContentNode;
+  // Return the original object — only patch scenes if missing (mutate-safe since it's readonly in selectors)
+  if (!vc.scenes) (vc as any).scenes = EMPTY_SCENES;
+  return vc as VideoContentNode & { scenes: VideoScene[] };
+}
+
+/** Get scenes[] safely from video content (returns [] if undefined) */
+function getScenes(state: LumvasStore): VideoScene[] {
+  return (state.content as VideoContentNode).scenes ?? [];
+}
+function getScenesFromVc(vc: VideoContentNode): VideoScene[] {
+  return vc.scenes ?? [];
 }
 
 export const useLumvasStore = create<LumvasStore>((_set, get) => {
@@ -965,22 +980,45 @@ export const useLumvasStore = create<LumvasStore>((_set, get) => {
       elements: [],
     };
     const vc = get().content as VideoContentNode;
-    set({ content: { ...vc, scenes: [...vc.scenes, s] } });
+    set({ content: { ...vc, scenes: [...(vc.scenes ?? []), s] } });
   },
 
   updateScene: (id, patch) => {
     const vc = get().content as VideoContentNode;
-    set({ content: { ...vc, scenes: vc.scenes.map((sc) => sc.id === id ? { ...sc, ...patch } : sc) } });
+
+    // Composition mode: update composition properties
+    if (vc.compositions && vc.compositions.length > 0) {
+      const compPatch: Partial<import("@/types/schema").Composition> = {};
+      if (patch.durationMs !== undefined) compPatch.durationMs = patch.durationMs;
+      if (patch.style !== undefined) compPatch.style = patch.style;
+      if (patch.padding !== undefined) compPatch.padding = patch.padding;
+      if (patch.gap !== undefined) compPatch.gap = patch.gap;
+      if (patch.direction !== undefined) compPatch.direction = patch.direction;
+      if (patch.alignItems !== undefined) compPatch.alignItems = patch.alignItems;
+      if (patch.justifyContent !== undefined) compPatch.justifyContent = patch.justifyContent;
+      set({
+        content: {
+          ...vc,
+          compositions: vc.compositions.map((c) =>
+            c.id === id ? { ...c, ...compPatch } : c
+          ),
+        },
+      });
+      return;
+    }
+
+    // Legacy scene mode
+    set({ content: { ...vc, scenes: (vc.scenes ?? []).map((sc) => sc.id === id ? { ...sc, ...patch } : sc) } });
   },
 
   removeScene: (id) => {
     const vc = get().content as VideoContentNode;
-    set({ content: { ...vc, scenes: vc.scenes.filter((sc) => sc.id !== id) } });
+    set({ content: { ...vc, scenes: (vc.scenes ?? []).filter((sc) => sc.id !== id) } });
   },
 
   reorderScenes: (from, to) => {
     const vc = get().content as VideoContentNode;
-    const scenes = [...vc.scenes];
+    const scenes = [...(vc.scenes ?? [])];
     const [moved] = scenes.splice(from, 1);
     scenes.splice(to, 0, moved);
     set({ content: { ...vc, scenes } });
@@ -993,7 +1031,7 @@ export const useLumvasStore = create<LumvasStore>((_set, get) => {
     set({
       content: {
         ...vc,
-        scenes: vc.scenes.map((sc) =>
+        scenes: (vc.scenes ?? []).map((sc) =>
           sc.id === sceneId ? { ...sc, elements: [...sc.elements, element] } : sc,
         ),
       },
@@ -1002,10 +1040,37 @@ export const useLumvasStore = create<LumvasStore>((_set, get) => {
 
   updateSceneElement: (sceneId, elementId, patch) => {
     const vc = get().content as VideoContentNode;
+
+    // Composition mode: update element inside composition layers
+    if (vc.compositions && vc.compositions.length > 0) {
+      set({
+        content: {
+          ...vc,
+          compositions: vc.compositions.map((comp) => ({
+            ...comp,
+            layers: comp.layers.map((layer) => {
+              if (layer.source.type === "element" && layer.source.element.id === elementId) {
+                return {
+                  ...layer,
+                  source: {
+                    ...layer.source,
+                    element: { ...layer.source.element, ...patch },
+                  },
+                };
+              }
+              return layer;
+            }),
+          })),
+        },
+      });
+      return;
+    }
+
+    // Legacy scene mode
     set({
       content: {
         ...vc,
-        scenes: vc.scenes.map((sc) =>
+        scenes: (vc.scenes ?? []).map((sc) =>
           sc.id === sceneId
             ? { ...sc, elements: updateSceneElementDeep(sc.elements, elementId, patch) }
             : sc,
@@ -1016,10 +1081,28 @@ export const useLumvasStore = create<LumvasStore>((_set, get) => {
 
   removeSceneElement: (sceneId, elementId) => {
     const vc = get().content as VideoContentNode;
+
+    // Composition mode: remove layer containing the element
+    if (vc.compositions && vc.compositions.length > 0) {
+      set({
+        content: {
+          ...vc,
+          compositions: vc.compositions.map((comp) => ({
+            ...comp,
+            layers: comp.layers.filter((layer) =>
+              !(layer.source.type === "element" && layer.source.element.id === elementId)
+            ),
+          })),
+        },
+      });
+      return;
+    }
+
+    // Legacy scene mode
     set({
       content: {
         ...vc,
-        scenes: vc.scenes.map((sc) =>
+        scenes: (vc.scenes ?? []).map((sc) =>
           sc.id === sceneId ? { ...sc, elements: removeSceneElementDeep(sc.elements, elementId) } : sc,
         ),
       },
@@ -1031,7 +1114,7 @@ export const useLumvasStore = create<LumvasStore>((_set, get) => {
     set({
       content: {
         ...vc,
-        scenes: vc.scenes.map((sc) => {
+        scenes: (vc.scenes ?? []).map((sc) => {
           if (sc.id !== sceneId) return sc;
           const elements = [...sc.elements];
           const [moved] = elements.splice(from, 1);
@@ -1047,7 +1130,7 @@ export const useLumvasStore = create<LumvasStore>((_set, get) => {
     set({
       content: {
         ...vc,
-        scenes: vc.scenes.map((sc) =>
+        scenes: (vc.scenes ?? []).map((sc) =>
           sc.id === sceneId
             ? { ...sc, elements: updateSceneTimingDeep(sc.elements, elementId, timing) }
             : sc,
@@ -1061,7 +1144,7 @@ export const useLumvasStore = create<LumvasStore>((_set, get) => {
     set({
       content: {
         ...vc,
-        scenes: vc.scenes.map((sc) =>
+        scenes: (vc.scenes ?? []).map((sc) =>
           sc.id === sceneId
             ? { ...sc, elements: addSceneElementToGroup(sc.elements, groupId, element) }
             : sc,
@@ -1072,7 +1155,7 @@ export const useLumvasStore = create<LumvasStore>((_set, get) => {
 
   moveSceneElementToGroup: (sceneId, elementId, targetGroupId) => {
     const vc = get().content as VideoContentNode;
-    const scene = vc.scenes.find((sc) => sc.id === sceneId);
+    const scene = (vc.scenes ?? []).find((sc) => sc.id === sceneId);
     if (!scene) return;
     const { tree, extracted } = extractSceneElement(scene.elements, elementId);
     if (!extracted) return;
@@ -1080,7 +1163,7 @@ export const useLumvasStore = create<LumvasStore>((_set, get) => {
     set({
       content: {
         ...vc,
-        scenes: vc.scenes.map((sc) => sc.id === sceneId ? { ...sc, elements: newElements } : sc),
+        scenes: (vc.scenes ?? []).map((sc) => sc.id === sceneId ? { ...sc, elements: newElements } : sc),
       },
     });
   },
@@ -1151,14 +1234,18 @@ export const useLumvasStore = create<LumvasStore>((_set, get) => {
     _skipSnapshot = true;
 
     if (isVideo) {
-      // Video document: import as-is
+      // Video document: migrate scenes[] to compositions[] if needed
+      let vc = doc.content as VideoContentNode;
+      if (needsMigration(vc)) {
+        vc = migrateScenesToCompositions(vc);
+      }
       _set({
         documentSize: doc.documentSize ?? DOCUMENT_SIZES[0],
         language: doc.language ?? "en",
         assets: doc.assets,
         contentType: "video",
         theme: { ...DEFAULT_THEME, ...doc.theme, palette: doc.theme.palette ?? [], fonts: doc.theme.fonts ?? DEFAULT_FONTS, backgroundPresets: doc.theme.backgroundPresets ?? [] },
-        content: doc.content,
+        content: vc,
         activeSlideId: null,
         activeElementId: null,
       });

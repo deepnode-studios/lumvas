@@ -49,11 +49,19 @@ interface TimelineStore {
   setEditingScene: (id: string | null) => void;
 }
 
-/** Get total video duration: max of scene durations and audio track end times */
+/** Get total video duration: max of scene/composition durations and audio track end times */
 export function getTotalDurationMs(): number {
   const state = useLumvasStore.getState();
   if (state.contentType !== "video") return 0;
   const content = selectVideoContent(state);
+
+  // Composition mode: use root comp duration
+  if (content.compositions && content.rootCompositionId) {
+    const rootComp = content.compositions.find((c) => c.id === content.rootCompositionId);
+    if (rootComp) return rootComp.durationMs;
+  }
+
+  // Legacy scene mode
   const sceneDuration = content.scenes.reduce((sum, s) => sum + s.durationMs, 0);
   let maxAudioEnd = 0;
   for (const track of content.audioTracks) {

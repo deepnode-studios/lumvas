@@ -12,8 +12,8 @@
  * A 2-second cache at 30fps = 60 frames = ~500 MB
  */
 
-import type { VideoScene, ThemeNode, AssetItem, DocumentSize, CaptionTrack } from "@/types/schema";
-import { renderSceneToCanvas, renderCaptionsToCanvas, preloadSceneAssets } from "./canvasRenderer";
+import type { VideoScene, ThemeNode, AssetItem, DocumentSize, CaptionTrack, Composition } from "@/types/schema";
+import { renderSceneToCanvas, renderCaptionsToCanvas, renderComposition, preloadSceneAssets } from "./canvasRenderer";
 
 /* ─── Types ─── */
 
@@ -41,6 +41,9 @@ export interface SceneContext {
   projectDir: string | null | undefined;
   language?: string;
   captionTracks?: CaptionTrack[];
+  /** Composition-based rendering (new architecture) */
+  compositionId?: string;
+  compositions?: Map<string, Composition>;
   /** Absolute time offset where this scene starts in the video timeline */
   sceneStartMs: number;
 }
@@ -154,10 +157,21 @@ export function createFrameCache(initialConfig: FrameCacheConfig): FrameCache {
     renderCtx.clearRect(0, 0, renderCanvas.width, renderCanvas.height);
     renderCtx.save();
     if (scale !== 1) renderCtx.scale(scale, scale);
-    renderSceneToCanvas(
-      renderCtx, ctx.scene, ctx.theme, ctx.assets,
-      config.size, ctx.projectDir ?? null, sceneTimeMs, ctx.language,
-    );
+
+    // Use composition renderer if available, fall back to legacy scene renderer
+    if (ctx.compositionId && ctx.compositions) {
+      renderComposition(
+        renderCtx, ctx.compositionId, ctx.compositions,
+        ctx.theme, ctx.assets, config.size, ctx.projectDir ?? null,
+        sceneTimeMs, ctx.language,
+      );
+    } else {
+      renderSceneToCanvas(
+        renderCtx, ctx.scene, ctx.theme, ctx.assets,
+        config.size, ctx.projectDir ?? null, sceneTimeMs, ctx.language,
+      );
+    }
+
     if (ctx.captionTracks && ctx.captionTracks.length > 0) {
       const absTimeMs = ctx.sceneStartMs + sceneTimeMs;
       renderCaptionsToCanvas(

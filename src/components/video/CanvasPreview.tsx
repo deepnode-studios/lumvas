@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useRef, useMemo, useImperativeHandle, forwardRef } from "react";
-import type { VideoScene, ThemeNode, AssetItem, DocumentSize, CaptionTrack } from "@/types/schema";
+import type { VideoScene, ThemeNode, AssetItem, DocumentSize, CaptionTrack, Composition } from "@/types/schema";
 import { createDisplayWithFallback, type GLDisplay } from "@/utils/glDisplay";
 import {
   createFrameCache,
@@ -14,7 +14,7 @@ import {
   type SceneContext,
   type CacheState,
 } from "@/utils/frameCache";
-import { preloadSceneAssets } from "@/utils/canvasRenderer";
+import { preloadSceneAssets, preloadCompositionAssets, buildCompositionMap } from "@/utils/canvasRenderer";
 import { SelectionOverlay } from "./SelectionOverlay";
 
 /* ─── Quality options ─── */
@@ -50,6 +50,9 @@ interface CanvasPreviewProps {
   captionTracks?: CaptionTrack[];
   fps?: number;
   quality: PreviewQuality;
+  /** Composition-based rendering */
+  compositionId?: string;
+  compositions?: Composition[];
   onCacheStateChange?: (state: CacheState) => void;
   onElementClick?: (id: string) => void;
   onBackgroundClick?: () => void;
@@ -60,6 +63,7 @@ export const CanvasPreview = forwardRef<CanvasPreviewHandle, CanvasPreviewProps>
   scene, theme, assets, size, language, projectDir,
   sceneTimeMs, sceneStartMs, previewScale, activeElementId,
   captionTracks, fps = 30, quality,
+  compositionId, compositions,
   onCacheStateChange,
   onElementClick, onBackgroundClick, onElementDragMove,
 }, ref) {
@@ -70,11 +74,17 @@ export const CanvasPreview = forwardRef<CanvasPreviewHandle, CanvasPreviewProps>
   const fpsRef = useRef({ frames: 0, lastTime: performance.now(), displayFps: 0, isCacheHit: false });
   const fpsOverlayRef = useRef<HTMLDivElement>(null);
 
+  const compMap = useMemo(() =>
+    compositions ? buildCompositionMap({ compositions, audioTracks: [], captionTracks: [], settings: { fps: fps as any, format: "mp4", codec: "h264", quality: "high" } }) : undefined,
+    [compositions],
+  );
+
   const sceneCtx: SceneContext = useMemo(() => ({
     scene, theme, assets,
     projectDir: projectDir ?? null,
     language, captionTracks, sceneStartMs,
-  }), [scene, theme, assets, projectDir, language, captionTracks, sceneStartMs]);
+    compositionId, compositions: compMap,
+  }), [scene, theme, assets, projectDir, language, captionTracks, sceneStartMs, compositionId, compMap]);
 
   const totalFrames = Math.ceil(scene.durationMs / (1000 / fps));
 
@@ -123,8 +133,13 @@ export const CanvasPreview = forwardRef<CanvasPreviewHandle, CanvasPreviewProps>
   useEffect(() => {
     sceneVersionRef.current++;
     cacheRef.current?.purgeAll();
-    preloadSceneAssets(scene, assets, projectDir).catch(() => {});
-  }, [scene, assets, projectDir]);
+    // Preload assets — use composition-aware preloader when compositions exist
+    if (compositionId && compMap) {
+      preloadCompositionAssets(compositionId, compMap, assets, projectDir ?? null).catch(() => {});
+    } else {
+      preloadSceneAssets(scene, assets, projectDir).catch(() => {});
+    }
+  }, [scene, assets, projectDir, compositionId, compMap]);
 
   // Render and display current frame — NO state updates here, only refs
   useEffect(() => {

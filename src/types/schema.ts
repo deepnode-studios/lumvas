@@ -557,10 +557,63 @@ export interface VideoSettings {
   quality: "draft" | "standard" | "high";
 }
 
+/* ─── Composition system ─── */
+
+/** What a layer references — discriminated union */
+export type LayerSource =
+  | { type: "element"; element: SceneElement }
+  | { type: "composition"; compositionId: string }
+  | { type: "audio"; audio: AudioTrack }
+  | { type: "caption"; caption: CaptionTrack };
+
+/** A layer in a composition's timeline */
+export interface CompLayer {
+  id: string;
+  name?: string;
+  source: LayerSource;
+  /** When this layer starts relative to the parent composition (ms) */
+  startMs: number;
+  /** Duration of this layer on the parent timeline (ms) */
+  durationMs: number;
+  /** Layer visibility */
+  enabled?: boolean;  // default true
+  /** Effects applied at the layer level */
+  effects?: Effect[];
+  /** Opacity override (0–1) */
+  opacity?: number;
+  /** Blend mode */
+  blendMode?: BlendMode;
+}
+
+/** A composition: independent timeline container with its own layer stack */
+export interface Composition {
+  id: string;
+  name: string;
+  durationMs: number;
+  /** Dimensions — defaults to project documentSize if omitted */
+  width?: number;
+  height?: number;
+  /** Background style */
+  style?: SlideStyle;
+  /** Layout (for positioned elements) */
+  alignItems?: FlexAlign;
+  justifyContent?: FlexJustify;
+  direction?: FlexDirection;
+  padding?: number;
+  gap?: number;
+  /** Ordered layer stack — last layer renders on top */
+  layers: CompLayer[];
+}
+
 /* Video content */
 
 export interface VideoContentNode {
-  scenes: VideoScene[];
+  /** @deprecated Use compositions[] + rootCompositionId instead */
+  scenes?: VideoScene[];
+  /** Library of all compositions */
+  compositions?: Composition[];
+  /** ID of the root composition (the final output) */
+  rootCompositionId?: string;
   audioTracks: AudioTrack[];
   captionTracks: CaptionTrack[];
   settings: VideoSettings;

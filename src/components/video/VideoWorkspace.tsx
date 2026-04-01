@@ -607,11 +607,15 @@ function TimelineTracks({
   // Build a flat list of layers — each item is its own independent track row
   type Layer =
     | { kind: "video" }
+    | { kind: "comp-layer"; layer: import("@/types/schema").CompLayer; compId: string }
     | { kind: "element"; el: (typeof videoContent.scenes)[0]["elements"][0]; sceneId: string; sceneDurationMs: number; sceneStartMs: number; depth: number }
     | { kind: "audio"; track: (typeof videoContent.audioTracks)[0] }
     | { kind: "caption"; track: (typeof videoContent.captionTracks)[0] };
 
   const layers: Layer[] = [];
+  const comps = videoContent.compositions;
+  const rootCompId = videoContent.rootCompositionId;
+  const rootComp = comps?.find((c) => c.id === rootCompId);
 
   // Helper: push element and its children recursively
   const pushElements = (elements: typeof videoContent.scenes[0]["elements"], sceneId: string, sceneDurationMs: number, sceneStartMs: number, depth: number) => {
@@ -623,39 +627,51 @@ function TimelineTracks({
     }
   };
 
-  // Video scenes — always first
-  layers.push({ kind: "video" });
-
-  if (editingSceneId) {
-    // Isolation mode: show only the editing scene's elements
-    const scene = videoContent.scenes.find((s) => s.id === editingSceneId);
-    if (scene) {
-      pushElements(scene.elements, scene.id, scene.durationMs, 0, 0);
-    }
-    // Show audio tracks that overlap with this scene's time range
-    const absStart = getSceneStartMs(editingSceneId);
-    const absEnd = absStart + (scene?.durationMs ?? 0);
-    for (const track of videoContent.audioTracks) {
-      const tEnd = track.startMs + track.durationMs;
-      if (track.startMs < absEnd && tEnd > absStart) {
-        // Remap audio to scene-relative time
-        layers.push({
-          kind: "audio",
-          track: { ...track, startMs: track.startMs - absStart },
-        });
+  if (rootComp && comps) {
+    // ─── Composition mode ───
+    // Show the currently-active composition's layers (root or editing)
+    // Reversed: last layer in array = topmost in Z-stack = top of the list
+    const activeCompId = editingSceneId ?? rootCompId;
+    const activeComp = activeCompId ? comps.find((c) => c.id === activeCompId) : rootComp;
+    const compToShow = activeComp ?? rootComp;
+    const reversedLayers = [...compToShow.layers].reverse();
+    for (const layer of reversedLayers) {
+      if (layer.source.type === "composition" || layer.source.type === "element") {
+        layers.push({ kind: "comp-layer", layer, compId: compToShow.id });
+      } else if (layer.source.type === "audio") {
+        layers.push({ kind: "audio", track: layer.source.audio });
+      } else if (layer.source.type === "caption") {
+        layers.push({ kind: "caption", track: layer.source.caption });
       }
     }
   } else {
-    // Master mode: show everything
-    for (const scene of videoContent.scenes) {
-      const sceneStartMs = getSceneStartMs(scene.id);
-      pushElements(scene.elements, scene.id, scene.durationMs, sceneStartMs, 0);
-    }
-    for (const track of videoContent.audioTracks) {
-      layers.push({ kind: "audio", track });
-    }
-    for (const track of videoContent.captionTracks) {
-      layers.push({ kind: "caption", track });
+    // ─── Legacy scene mode ───
+    layers.push({ kind: "video" });
+
+    if (editingSceneId) {
+      const scene = videoContent.scenes.find((s) => s.id === editingSceneId);
+      if (scene) {
+        pushElements(scene.elements, scene.id, scene.durationMs, 0, 0);
+      }
+      const absStart = getSceneStartMs(editingSceneId);
+      const absEnd = absStart + (scene?.durationMs ?? 0);
+      for (const track of videoContent.audioTracks) {
+        const tEnd = track.startMs + track.durationMs;
+        if (track.startMs < absEnd && tEnd > absStart) {
+          layers.push({ kind: "audio", track: { ...track, startMs: track.startMs - absStart } });
+        }
+      }
+    } else {
+      for (const scene of videoContent.scenes) {
+        const sceneStartMs = getSceneStartMs(scene.id);
+        pushElements(scene.elements, scene.id, scene.durationMs, sceneStartMs, 0);
+      }
+      for (const track of videoContent.audioTracks) {
+        layers.push({ kind: "audio", track });
+      }
+      for (const track of videoContent.captionTracks) {
+        layers.push({ kind: "caption", track });
+      }
     }
   }
 
@@ -688,6 +704,33 @@ function TimelineTracks({
                   Video
                 </div>
               );
+            case "comp-layer": {
+              const cl = layer.layer;
+              const isCompRef = cl.source.type === "composition";
+              const isElement = cl.source.type === "element";
+              const elId = isElement ? (cl.source as any).element.id : null;
+              const label = cl.name || (isCompRef ? (cl.source as any).compositionId : isElement ? (cl.source as any).element.type : "Layer");
+              const dotColor = isCompRef ? "#0a84ff" : isElement ? "#4ecdc4" : "#888";
+              const isActive = elId && elId === useLumvasStore.getState().activeElementId;
+              return (
+                <div
+                  key={cl.id}
+                  className={styles.trackLabel}
+                  style={{ cursor: "pointer", background: isActive ? "#0a84ff22" : undefined }}
+                  onClick={() => {
+                    if (elId) {
+                      useLumvasStore.getState().setActiveElement(elId);
+                      useTimelineStore.getState().setInspectorTarget({ type: "element", sceneId: layer.compId, elementId: elId });
+                    } else if (isCompRef) {
+                      useTimelineStore.getState().setInspectorTarget({ type: "scene", sceneId: (cl.source as any).compositionId });
+                    }
+                  }}
+                >
+                  <span className={styles.trackLabelDot} style={{ background: dotColor }} />
+                  {label.slice(0, 14)}
+                </div>
+              );
+            }
             case "element": {
               const elInfo = elementIndexMap.get(layer.el.id)!;
               return (
@@ -784,6 +827,47 @@ function TimelineTracks({
                         onSeek={onSeek}
                       />
                     ))}
+                  </div>
+                );
+              }
+
+              case "comp-layer": {
+                const cl = layer.layer;
+                const left = (cl.startMs / 1000) * zoomLevel;
+                const width = (cl.durationMs / 1000) * zoomLevel;
+                const isCompRef = cl.source.type === "composition";
+                const isEl = cl.source.type === "element";
+                const elId = isEl ? (cl.source as any).element.id : null;
+                const barColor = isCompRef ? "#0a84ff" : isEl ? "#4ecdc4" : "#888";
+                const label = cl.name || cl.id;
+                const isActive = elId && elId === useLumvasStore.getState().activeElementId;
+                return (
+                  <div key={cl.id} className={styles.trackRow}>
+                    <div
+                      className={styles.sceneBlock}
+                      style={{
+                        left,
+                        width: Math.max(width, 4),
+                        background: isActive ? `${barColor}44` : `${barColor}22`,
+                        borderLeft: `3px solid ${barColor}`,
+                        cursor: "pointer",
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (elId) {
+                          useLumvasStore.getState().setActiveElement(elId);
+                          useTimelineStore.getState().setInspectorTarget({ type: "element", sceneId: layer.compId, elementId: elId });
+                        } else if (isCompRef) {
+                          useTimelineStore.getState().setInspectorTarget({ type: "scene", sceneId: (cl.source as any).compositionId });
+                        }
+                      }}
+                      onDoubleClick={isCompRef ? () => {
+                        useTimelineStore.getState().setEditingScene((cl.source as any).compositionId);
+                      } : undefined}
+                      title={isCompRef ? `Double-click to enter "${label}"` : label}
+                    >
+                      <span className={styles.sceneBlockLabel}>{label}</span>
+                    </div>
                   </div>
                 );
               }
@@ -1011,14 +1095,32 @@ export function VideoWorkspace() {
   const editingScene = editingSceneId ? videoContent.scenes.find((s) => s.id === editingSceneId) ?? null : null;
 
   // In isolation mode, duration and scene are scoped to the single scene
-  const totalDuration = editingScene ? editingScene.durationMs : getTotalDurationMs();
+  // Duration: if editing a sub-composition, use its duration; otherwise root duration
+  const hasComps = !!(videoContent.compositions && videoContent.rootCompositionId);
+  const editingComp = hasComps && editingSceneId
+    ? (videoContent.compositions ?? []).find((c) => c.id === editingSceneId)
+    : null;
+  const totalDuration = editingComp
+    ? editingComp.durationMs
+    : editingScene
+      ? editingScene.durationMs
+      : getTotalDurationMs();
+  const hasCompositions = !!(videoContent.compositions && videoContent.rootCompositionId);
   const currentSceneId = editingSceneId ?? getSceneAtTime(currentTimeMs);
   const currentScene = editingSceneId
     ? editingScene
     : videoContent.scenes.find((s) => s.id === currentSceneId);
-  const sceneTime = editingSceneId
-    ? currentTimeMs // in isolation mode, time IS scene-relative
-    : (currentSceneId ? currentTimeMs - getSceneStartMs(currentSceneId) : 0);
+  // In composition mode, time is always absolute (root comp time)
+  // In legacy mode, time is scene-relative
+  const sceneTime = hasCompositions
+    ? currentTimeMs
+    : editingSceneId
+      ? currentTimeMs
+      : (currentSceneId ? currentTimeMs - getSceneStartMs(currentSceneId) : 0);
+  // For composition mode, create a dummy "scene" for backward compat with CanvasPreview
+  const effectiveScene = hasCompositions
+    ? { id: videoContent.rootCompositionId!, durationMs: totalDuration, elements: [] as any[], style: undefined }
+    : currentScene;
 
   // Playback loop
   useEffect(() => {
@@ -1365,11 +1467,11 @@ export function VideoWorkspace() {
       {/* Center: preview + transport */}
       <main className={styles.center} ref={centerRef}>
         <div className={styles.previewArea} onDrop={handlePreviewDrop} onDragOver={handlePreviewDragOver}>
-          {currentScene ? (
+          {(effectiveScene || currentScene) ? (
             <div className={styles.canvasWrapper}>
               <CanvasPreview
                 ref={previewRef}
-                scene={currentScene}
+                scene={(effectiveScene || currentScene) as any}
                 theme={theme}
                 assets={assets}
                 size={size}
@@ -1382,23 +1484,28 @@ export function VideoWorkspace() {
                 captionTracks={videoContent.captionTracks}
                 fps={videoContent.settings.fps}
                 quality={previewQuality}
+                compositionId={videoContent.rootCompositionId}
+                compositions={videoContent.compositions}
                 onCacheStateChange={setCacheState}
                 onElementClick={(id) => {
-                  useLumvasStore.getState().setActiveScene(currentScene.id);
+                  const sceneId = effectiveScene?.id || currentScene?.id || "";
+                  useLumvasStore.getState().setActiveScene(sceneId);
                   useLumvasStore.getState().setActiveElement(id);
-                  useTimelineStore.getState().setInspectorTarget({ type: "element", sceneId: currentScene.id, elementId: id });
+                  useTimelineStore.getState().setInspectorTarget({ type: "element", sceneId, elementId: id });
                 }}
                 onBackgroundClick={() => {
                   useLumvasStore.getState().setActiveElement(null);
                 }}
                 onElementDragMove={(id, dx, dy) => {
-                  const el = currentScene.elements.find((e) => e.id === id);
+                  const sceneId = effectiveScene?.id || currentScene?.id || "";
+                  const els = currentScene?.elements ?? [];
+                  const el = els.find((e: any) => e.id === id);
                   if (!el) return;
-                  useLumvasStore.getState().setActiveScene(currentScene.id);
+                  useLumvasStore.getState().setActiveScene(sceneId);
                   useLumvasStore.getState().setActiveElement(id);
-                  useLumvasStore.getState().updateSceneElement(currentScene.id, id, {
-                    x: (el.x ?? 0) + dx,
-                    y: (el.y ?? 0) + dy,
+                  useLumvasStore.getState().updateSceneElement(sceneId, id, {
+                    x: ((el as any).x ?? 0) + dx,
+                    y: ((el as any).y ?? 0) + dy,
                   });
                 }}
               />
@@ -1562,21 +1669,35 @@ export function VideoWorkspace() {
             className={`${styles.sceneTab} ${!editingSceneId ? styles.sceneTabActive : ""}`}
             onClick={() => useTimelineStore.getState().setEditingScene(null)}
           >
-            Master
+            Root
           </button>
-          {videoContent.scenes.map((sc, i) => (
-            <button
-              key={sc.id}
-              className={`${styles.sceneTab} ${editingSceneId === sc.id ? styles.sceneTabActive : ""}`}
-              onClick={() => useTimelineStore.getState().setEditingScene(sc.id)}
-              title={`Scene ${i + 1} (${(sc.durationMs / 1000).toFixed(1)}s)`}
-            >
-              S{i + 1}
-            </button>
-          ))}
+          {hasCompositions
+            ? (videoContent.compositions ?? []).filter(c => c.id !== videoContent.rootCompositionId).map((comp, i) => (
+                <button
+                  key={comp.id}
+                  className={`${styles.sceneTab} ${editingSceneId === comp.id ? styles.sceneTabActive : ""}`}
+                  onClick={() => useTimelineStore.getState().setEditingScene(comp.id)}
+                  title={`${comp.name} (${(comp.durationMs / 1000).toFixed(1)}s)`}
+                >
+                  {comp.name.slice(0, 6)}
+                </button>
+              ))
+            : videoContent.scenes.map((sc, i) => (
+                <button
+                  key={sc.id}
+                  className={`${styles.sceneTab} ${editingSceneId === sc.id ? styles.sceneTabActive : ""}`}
+                  onClick={() => useTimelineStore.getState().setEditingScene(sc.id)}
+                  title={`Scene ${i + 1} (${(sc.durationMs / 1000).toFixed(1)}s)`}
+                >
+                  S{i + 1}
+                </button>
+              ))
+          }
           {editingSceneId && (
             <span className={styles.isolationBadge}>
-              Editing Scene {videoContent.scenes.findIndex((s) => s.id === editingSceneId) + 1}
+              {hasCompositions
+                ? `Editing: ${(videoContent.compositions ?? []).find(c => c.id === editingSceneId)?.name ?? editingSceneId}`
+                : `Editing Scene ${videoContent.scenes.findIndex((s) => s.id === editingSceneId) + 1}`}
             </span>
           )}
         </div>

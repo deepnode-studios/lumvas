@@ -7,8 +7,8 @@ export function validateLumvasDocument(obj: unknown): obj is LumvasDocument {
   const c = d.content as Record<string, unknown>;
 
   if (d.contentType === "video") {
-    // Video: needs scenes array
-    return Array.isArray(c.scenes);
+    // Video: needs scenes array OR compositions array
+    return Array.isArray(c.scenes) || Array.isArray(c.compositions);
   }
   // Slides (default): needs slides array
   return Array.isArray(c.slides);
