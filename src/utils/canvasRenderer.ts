@@ -13,8 +13,16 @@ import type {
   FlexAlign,
   FlexJustify,
   FlexDirection,
+  TextSpan,
+  MotionPath,
+  PathMorphConfig,
+  ParticleEmitterConfig,
+  CameraTrack,
+  CameraKeyframe,
+  Easing,
+  SpriteConfig,
 } from "@/types/schema";
-import { computeElementStyle, type ComputedElementStyle } from "@/utils/animation";
+import { computeElementStyle, type ComputedElementStyle, lerpColor } from "@/utils/animation";
 import { computeEffects } from "@/utils/effectsRenderer";
 import { isVideoSrc, preloadVideo, drawVideoFrameToCanvas, computeVideoSeekTime, getVideoMeta } from "@/utils/videoCache";
 import { log } from "@/utils/logger";
@@ -64,6 +72,525 @@ function getPathLength(d: string): number {
   } catch {
     return 1000; // safe fallback
   }
+}
+
+/* ─── Motion path: sample position along SVG path ─── */
+
+/** Cached SVGPathElement instances for motion path sampling */
+const motionPathCache = new Map<string, SVGPathElement>();
+
+function getMotionPathElement(d: string): SVGPathElement {
+  if (motionPathCache.has(d)) return motionPathCache.get(d)!;
+  const svgNS = "http://www.w3.org/2000/svg";
+  const svgEl = document.createElementNS(svgNS, "svg") as SVGSVGElement;
+  const pathEl = document.createElementNS(svgNS, "path") as SVGPathElement;
+  pathEl.setAttribute("d", d);
+  svgEl.appendChild(pathEl);
+  svgEl.style.cssText = "position:absolute;visibility:hidden;pointer-events:none";
+  document.body.appendChild(svgEl);
+  motionPathCache.set(d, pathEl);
+  return pathEl;
+}
+
+/**
+ * Sample a point on a motion path at a given progress (0–1).
+ * Returns { x, y, angle } where angle is the tangent direction in degrees.
+ */
+export function sampleMotionPath(d: string, progress: number): { x: number; y: number; angle: number } {
+  const pathEl = getMotionPathElement(d);
+  const totalLength = pathEl.getTotalLength();
+  const len = Math.max(0, Math.min(1, progress)) * totalLength;
+  const pt = pathEl.getPointAtLength(len);
+  // Compute tangent angle by sampling a tiny offset
+  const dt = 0.5;
+  const ptNext = pathEl.getPointAtLength(Math.min(totalLength, len + dt));
+  const angle = Math.atan2(ptNext.y - pt.y, ptNext.x - pt.x) * (180 / Math.PI);
+  return { x: pt.x, y: pt.y, angle };
+}
+
+/* ─── Path morphing: interpolate between two SVG path d-strings ─── */
+
+/**
+ * Normalize an SVG path to a series of points by sampling at regular intervals.
+ * This allows interpolation between any two paths regardless of their segment types.
+ */
+function pathToPoints(d: string, count: number): { x: number; y: number }[] {
+  const pathEl = getMotionPathElement(d);
+  const totalLength = pathEl.getTotalLength();
+  const points: { x: number; y: number }[] = [];
+  for (let i = 0; i < count; i++) {
+    const len = (i / (count - 1)) * totalLength;
+    const pt = pathEl.getPointAtLength(len);
+    points.push({ x: pt.x, y: pt.y });
+  }
+  return points;
+}
+
+/** Cache for normalized path points */
+const morphPointsCache = new Map<string, { x: number; y: number }[]>();
+
+function getNormalizedPoints(d: string, count: number): { x: number; y: number }[] {
+  const key = `${d}::${count}`;
+  if (morphPointsCache.has(key)) return morphPointsCache.get(key)!;
+  const pts = pathToPoints(d, count);
+  morphPointsCache.set(key, pts);
+  return pts;
+}
+
+/**
+ * Interpolate between two SVG paths and return a new `d` string.
+ * Both paths are resampled to `pointCount` points, then linearly interpolated.
+ */
+export function interpolatePaths(sourceD: string, targetD: string, progress: number, pointCount: number = 128): string {
+  const srcPts = getNormalizedPoints(sourceD, pointCount);
+  const tgtPts = getNormalizedPoints(targetD, pointCount);
+  const t = Math.max(0, Math.min(1, progress));
+  const parts: string[] = [];
+  for (let i = 0; i < pointCount; i++) {
+    const x = srcPts[i].x + (tgtPts[i].x - srcPts[i].x) * t;
+    const y = srcPts[i].y + (tgtPts[i].y - srcPts[i].y) * t;
+    parts.push(i === 0 ? `M ${x} ${y}` : `L ${x} ${y}`);
+  }
+  return parts.join(" ") + " Z";
+}
+
+/* ─── Particle system ─── */
+
+interface Particle {
+  x: number; y: number;
+  vx: number; vy: number;
+  size: number;
+  color: string;
+  birthMs: number;
+  lifetimeMs: number;
+  opacity: number;
+  opacityEnd: number;
+}
+
+/** Per-emitter particle state — keyed by element ID */
+const particleStates = new Map<string, {
+  particles: Particle[];
+  lastEmitMs: number;
+  seed: number;
+}>();
+
+/** Seeded pseudo-random number generator */
+function seededRandom(seed: number): number {
+  const x = Math.sin(seed) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+function tickParticles(
+  elementId: string,
+  config: ParticleEmitterConfig,
+  sceneTimeMs: number,
+  enterMs: number,
+): Particle[] {
+  let state = particleStates.get(elementId);
+  if (!state) {
+    state = { particles: [], lastEmitMs: enterMs, seed: 0 };
+    particleStates.set(elementId, state);
+  }
+
+  const elapsedMs = sceneTimeMs - enterMs;
+  const maxParticles = config.maxParticles ?? 200;
+
+  // Emit new particles
+  const emitInterval = 1000 / config.emitRate;
+  while (state.lastEmitMs + emitInterval <= sceneTimeMs && state.particles.length < maxParticles) {
+    state.lastEmitMs += emitInterval;
+    state.seed++;
+    const seed = state.seed;
+    const angle = config.angle.min + seededRandom(seed * 1.1) * (config.angle.max - config.angle.min);
+    const speed = config.velocity.min + seededRandom(seed * 2.2) * (config.velocity.max - config.velocity.min);
+    const rad = (angle - 90) * Math.PI / 180; // -90 so 0deg = up
+    const size = config.size.min + seededRandom(seed * 3.3) * (config.size.max - config.size.min);
+    const color = config.colors[Math.floor(seededRandom(seed * 4.4) * config.colors.length)] ?? "#ffffff";
+
+    state.particles.push({
+      x: 0, y: 0,
+      vx: Math.cos(rad) * speed,
+      vy: Math.sin(rad) * speed,
+      size,
+      color,
+      birthMs: state.lastEmitMs,
+      lifetimeMs: config.particleLifetimeMs,
+      opacity: config.opacity.start,
+      opacityEnd: config.opacity.end,
+    });
+  }
+
+  // Update existing particles
+  const alive: Particle[] = [];
+  for (const p of state.particles) {
+    const age = sceneTimeMs - p.birthMs;
+    if (age > p.lifetimeMs) continue;
+    const t = age / p.lifetimeMs;
+    const dtS = 1 / 60; // approximate dt
+    p.x += p.vx * dtS;
+    p.y += p.vy * dtS;
+    p.vy += config.gravity * dtS;
+    p.opacity = p.opacity + (p.opacityEnd - p.opacity) * t;
+    alive.push(p);
+  }
+  state.particles = alive;
+  return alive;
+}
+
+function drawParticleShape(
+  ctx: CanvasRenderingContext2D,
+  shape: string,
+  x: number, y: number,
+  size: number,
+  color: string,
+  opacity: number,
+  customPath?: string,
+) {
+  ctx.save();
+  ctx.globalAlpha *= opacity;
+  ctx.fillStyle = color;
+  ctx.translate(x, y);
+
+  switch (shape) {
+    case "circle":
+      ctx.beginPath();
+      ctx.arc(0, 0, size / 2, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    case "square":
+      ctx.fillRect(-size / 2, -size / 2, size, size);
+      break;
+    case "heart": {
+      const s = size / 2;
+      ctx.beginPath();
+      ctx.moveTo(0, s * 0.4);
+      ctx.bezierCurveTo(-s, -s * 0.3, -s * 0.5, -s, 0, -s * 0.4);
+      ctx.bezierCurveTo(s * 0.5, -s, s, -s * 0.3, 0, s * 0.4);
+      ctx.fill();
+      break;
+    }
+    case "star": {
+      const s = size / 2;
+      ctx.beginPath();
+      for (let i = 0; i < 5; i++) {
+        const outerAngle = (i * 72 - 90) * Math.PI / 180;
+        const innerAngle = ((i * 72 + 36) - 90) * Math.PI / 180;
+        ctx.lineTo(Math.cos(outerAngle) * s, Math.sin(outerAngle) * s);
+        ctx.lineTo(Math.cos(innerAngle) * s * 0.4, Math.sin(innerAngle) * s * 0.4);
+      }
+      ctx.closePath();
+      ctx.fill();
+      break;
+    }
+    case "custom":
+      if (customPath) {
+        const path = new Path2D(customPath);
+        const scale = size / 24; // assume 24x24 viewbox
+        ctx.scale(scale, scale);
+        ctx.fill(path);
+      }
+      break;
+  }
+  ctx.restore();
+}
+
+/* ─── Glow rendering ─── */
+
+/**
+ * Draw a glow effect around an element by re-rendering it to an offscreen canvas
+ * with blur + additive blending.
+ */
+function drawGlowEffect(
+  ctx: CanvasRenderingContext2D,
+  box: LayoutBox,
+  glowColor: string,
+  glowRadius: number,
+  glowIntensity: number,
+  passes: number,
+) {
+  if (glowIntensity <= 0 || glowRadius <= 0) return;
+  const margin = glowRadius * 3;
+  const ow = box.w + margin * 2;
+  const oh = box.h + margin * 2;
+
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter"; // additive blend
+  ctx.globalAlpha *= glowIntensity;
+  ctx.filter = `blur(${glowRadius}px)`;
+  ctx.fillStyle = glowColor;
+
+  for (let i = 0; i < passes; i++) {
+    roundRect(ctx, box.x - margin / 4, box.y - margin / 4, box.w + margin / 2, box.h + margin / 2, 8);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+/* ─── Sprite sheet rendering ─── */
+
+function drawSpriteFrame(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  sprite: SpriteConfig,
+  box: LayoutBox,
+  sceneTimeMs: number,
+  enterMs: number,
+) {
+  const elapsedMs = Math.max(0, sceneTimeMs - enterMs);
+  const totalFrameTime = (sprite.frameCount / sprite.fps) * 1000;
+  let frameIndex: number;
+
+  switch (sprite.playMode) {
+    case "once":
+      frameIndex = Math.min(Math.floor((elapsedMs / 1000) * sprite.fps), sprite.frameCount - 1);
+      break;
+    case "hold-last":
+      frameIndex = Math.min(Math.floor((elapsedMs / 1000) * sprite.fps), sprite.frameCount - 1);
+      break;
+    case "ping-pong": {
+      const rawFrame = Math.floor((elapsedMs / 1000) * sprite.fps);
+      const cycle = sprite.frameCount * 2 - 2;
+      const pos = cycle > 0 ? rawFrame % cycle : 0;
+      frameIndex = pos < sprite.frameCount ? pos : cycle - pos;
+      break;
+    }
+    case "loop":
+    default:
+      frameIndex = Math.floor((elapsedMs / 1000) * sprite.fps) % sprite.frameCount;
+      break;
+  }
+
+  const col = frameIndex % sprite.columns;
+  const row = Math.floor(frameIndex / sprite.columns);
+  const sx = col * sprite.frameWidth;
+  const sy = row * sprite.frameHeight;
+
+  ctx.drawImage(img, sx, sy, sprite.frameWidth, sprite.frameHeight, box.x, box.y, box.w, box.h);
+}
+
+/* ─── Camera transform ─── */
+
+function cubicBezierEase(x1: number, y1: number, x2: number, y2: number, t: number): number {
+  const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx;
+  const cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by;
+  let x = t;
+  for (let i = 0; i < 8; i++) {
+    const xCalc = ((ax * x + bx) * x + cx) * x - t;
+    const dx = (3 * ax * x + 2 * bx) * x + cx;
+    if (Math.abs(dx) < 1e-6) break;
+    x -= xCalc / dx;
+  }
+  return ((ay * x + by) * x + cy) * x;
+}
+
+function resolveCameraEasing(easing: Easing | undefined, t: number): number {
+  if (!easing || easing === "linear") return t;
+  if (typeof easing === "object" && easing.type === "cubic-bezier") {
+    return cubicBezierEase(easing.x1, easing.y1, easing.x2, easing.y2, t);
+  }
+  switch (easing as string) {
+    case "ease-in": return cubicBezierEase(0.42, 0, 1, 1, t);
+    case "ease-out": return cubicBezierEase(0, 0, 0.58, 1, t);
+    case "ease-in-out": return cubicBezierEase(0.42, 0, 0.58, 1, t);
+    default: return t;
+  }
+}
+
+/**
+ * Interpolate camera state at a given time from a CameraTrack.
+ * Returns { x, y, zoom, rotation } to apply as canvas transform.
+ */
+export function interpolateCamera(
+  camera: CameraTrack,
+  timeMs: number,
+): { x: number; y: number; zoom: number; rotation: number } {
+  const kfs = camera.keyframes;
+  if (!kfs || kfs.length === 0) return { x: 0, y: 0, zoom: 1, rotation: 0 };
+  if (kfs.length === 1 || timeMs <= kfs[0].timeMs) {
+    const k = kfs[0];
+    return { x: k.x, y: k.y, zoom: k.zoom, rotation: k.rotation ?? 0 };
+  }
+  if (timeMs >= kfs[kfs.length - 1].timeMs) {
+    const k = kfs[kfs.length - 1];
+    return { x: k.x, y: k.y, zoom: k.zoom, rotation: k.rotation ?? 0 };
+  }
+
+  // Find surrounding keyframes
+  let before = kfs[0];
+  let after = kfs[kfs.length - 1];
+  for (let i = 0; i < kfs.length - 1; i++) {
+    if (timeMs >= kfs[i].timeMs && timeMs <= kfs[i + 1].timeMs) {
+      before = kfs[i];
+      after = kfs[i + 1];
+      break;
+    }
+  }
+
+  const range = after.timeMs - before.timeMs;
+  const raw = range > 0 ? (timeMs - before.timeMs) / range : 0;
+  const t = resolveCameraEasing(after.easing, raw);
+
+  return {
+    x: before.x + (after.x - before.x) * t,
+    y: before.y + (after.y - before.y) * t,
+    zoom: before.zoom + (after.zoom - before.zoom) * t,
+    rotation: (before.rotation ?? 0) + ((after.rotation ?? 0) - (before.rotation ?? 0)) * t,
+  };
+}
+
+/* ─── Text stagger rendering ─── */
+
+/**
+ * Decompose text into units (chars/words/lines) and draw each with staggered animation.
+ */
+function drawTextStaggered(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  box: LayoutBox,
+  stagger: NonNullable<ComputedElementStyle["textStagger"]>,
+  sceneTimeMs: number,
+  opts: {
+    color: string;
+    fontSize: number;
+    fontWeight: number;
+    fontFamily: string;
+    textAlign?: CanvasTextAlign;
+    lineHeight?: number;
+    language?: string;
+  },
+) {
+  if (!text) return;
+
+  // Split text into units
+  let units: string[];
+  if (stagger.unit === "character") {
+    units = text.split("");
+  } else if (stagger.unit === "line") {
+    units = text.split("\n");
+  } else {
+    units = text.split(/\s+/).filter(Boolean);
+  }
+
+  if (units.length === 0) return;
+
+  // Compute stagger order
+  let order: number[];
+  switch (stagger.staggerFrom) {
+    case "end":
+      order = units.map((_, i) => units.length - 1 - i);
+      break;
+    case "center": {
+      const mid = (units.length - 1) / 2;
+      order = units.map((_, i) => Math.abs(i - mid));
+      // Normalize so center starts first
+      const maxDist = Math.max(...order);
+      order = order.map(d => d);
+      break;
+    }
+    case "random":
+      order = units.map((_, i) => {
+        // Deterministic pseudo-random based on index
+        return Math.floor(seededRandom(i * 127.1 + 42) * units.length);
+      });
+      break;
+    case "start":
+    default:
+      order = units.map((_, i) => i);
+      break;
+  }
+
+  ctx.save();
+  ctx.font = `${opts.fontWeight} ${opts.fontSize}px ${opts.fontFamily}`;
+  ctx.textBaseline = "top";
+  ctx.textAlign = "left";
+
+  const lh = opts.fontSize * (opts.lineHeight || 1.4);
+  const align = opts.textAlign ?? "left";
+  const enterMs = stagger.enterMs;
+  const totalDur = stagger.durationMs;
+
+  // Measure each unit
+  const unitWidths = units.map(u => stagger.unit === "line" ? ctx.measureText(u).width : ctx.measureText(u + " ").width);
+
+  // Word-wrap into lines for word/char mode
+  let x = box.x;
+  let y = box.y;
+
+  if (align === "center") x = box.x + box.w / 2;
+  else if (align === "right") x = box.x + box.w;
+
+  // Simplified: draw units inline with word-wrap
+  let lineX = 0;
+  let lineY = 0;
+
+  for (let i = 0; i < units.length; i++) {
+    const unitDelay = order[i] * stagger.staggerMs;
+    const unitEnter = enterMs + unitDelay;
+    const unitDur = Math.max(100, totalDur - unitDelay);
+    const elapsed = sceneTimeMs - unitEnter;
+
+    if (elapsed < 0) continue; // not visible yet
+
+    const progress = Math.min(1, elapsed / unitDur);
+    // Apply per-unit easing
+    const eased = progress; // simplified — full easing resolution available via cubicBezierEase
+
+    // Compute per-unit animation state
+    let unitOpacity = 1;
+    let unitY = 0;
+    let unitScale = 1;
+    let unitBlur = 0;
+
+    switch (stagger.animation) {
+      case "fade-up":
+        unitOpacity = eased;
+        unitY = (1 - eased) * 20;
+        break;
+      case "fade-in":
+        unitOpacity = eased;
+        break;
+      case "scale-in":
+        unitOpacity = eased;
+        unitScale = 0.5 + eased * 0.5;
+        break;
+      case "blur-in":
+        unitOpacity = eased;
+        unitBlur = (1 - eased) * 8;
+        break;
+      case "drop-in":
+        unitOpacity = Math.min(1, eased * 2);
+        unitY = (1 - eased) * -40;
+        break;
+    }
+
+    // Word wrap
+    const w = ctx.measureText(units[i]).width;
+    const spacer = stagger.unit === "word" ? ctx.measureText(" ").width : 0;
+
+    if (lineX + w > box.w && lineX > 0) {
+      lineX = 0;
+      lineY += lh;
+    }
+
+    const drawX = align === "center" ? box.x + (box.w - w) / 2 + lineX - (stagger.unit === "word" ? box.w / 2 : 0) : box.x + lineX;
+    const drawY = box.y + lineY + unitY;
+
+    ctx.save();
+    ctx.globalAlpha *= unitOpacity;
+    if (unitBlur > 0) ctx.filter = `blur(${unitBlur}px)`;
+    if (unitScale !== 1) {
+      ctx.translate(drawX + w / 2, drawY + opts.fontSize / 2);
+      ctx.scale(unitScale, unitScale);
+      ctx.translate(-(drawX + w / 2), -(drawY + opts.fontSize / 2));
+    }
+    ctx.fillStyle = opts.color;
+    ctx.fillText(units[i], drawX, drawY);
+    ctx.restore();
+
+    lineX += w + spacer;
+  }
+
+  ctx.restore();
 }
 
 /** Pre-load all images/logos referenced in a scene */
@@ -135,6 +662,11 @@ export async function preloadCompositionAssets(
     }
     if (el.type === "svg" && el.content) {
       srcs.add(svgMarkupToDataUrl(el.content));
+    }
+    // Lottie: the src may be an asset ID or inline JSON — preload if it's a URL
+    if (el.type === "lottie" && el.lottie?.src) {
+      const lSrc = resolveMediaSrcLocal(el.lottie.src, projectDir);
+      if (lSrc.startsWith("http") || lSrc.startsWith("data:") || lSrc.startsWith("asset:")) srcs.add(lSrc);
     }
     if (el.children) el.children.forEach(collectFromElement);
   }
@@ -413,6 +945,10 @@ function estimateElementSize(
       const r = (el.indicatorRadius ?? 40) * 2 + 8;
       return { w: r, h: r };
     }
+    case "lottie":
+      return { w: parseSizeW(el.sceneWidth ?? el.width, 200), h: parseSizeH(el.sceneHeight ?? el.height, 200) };
+    case "particle-emitter":
+      return { w: parseSizeW(el.sceneWidth ?? el.width, parentWidth), h: parseSizeH(el.sceneHeight ?? el.height, parentHeight) };
     default:
       return { w, h: 24 };
   }
@@ -437,9 +973,17 @@ function drawText(
     language?: string;
     textStrokeColor?: string;
     textStrokeWidth?: number;
+    spans?: TextSpan[];
   },
 ) {
   if (!text) return;
+
+  // If spans exist, delegate to span-aware renderer
+  const hasSpans = opts.spans && opts.spans.length > 0 && opts.spans.some((s) => s.text);
+  if (hasSpans) {
+    drawTextWithSpans(ctx, box, opts, opts.spans!);
+    return;
+  }
 
   let displayText = text;
   if (opts.textTransform === "uppercase") displayText = text.toLocaleUpperCase(opts.language);
@@ -496,6 +1040,128 @@ function drawText(
       ctx.fillText(line, xBase, y);
       y += lh;
     }
+  }
+  ctx.restore();
+}
+
+/**
+ * Render text spans — each span is an independent styled segment.
+ * Spans are drawn inline left-to-right with word-wrapping.
+ */
+function drawTextWithSpans(
+  ctx: CanvasRenderingContext2D,
+  box: LayoutBox,
+  opts: {
+    color: string;
+    fontSize: number;
+    fontWeight: number;
+    fontFamily: string;
+    textAlign?: CanvasTextAlign;
+    lineHeight?: number;
+    opacity?: number;
+    letterSpacing?: number;
+    textTransform?: string;
+    language?: string;
+  },
+  spans: TextSpan[],
+) {
+  ctx.save();
+  if (opts.opacity !== undefined && opts.opacity < 1) ctx.globalAlpha *= opts.opacity;
+  ctx.textBaseline = "top";
+
+  const lh = opts.fontSize * (opts.lineHeight || 1.4);
+
+  // Build a flat list of "tokens" (words and whitespace) with per-token style from spans
+  interface Token { text: string; span: TextSpan; isSpace: boolean; isNewline: boolean }
+  const tokens: Token[] = [];
+
+  for (const span of spans) {
+    let t = span.text;
+    if (opts.textTransform === "uppercase") t = t.toLocaleUpperCase(opts.language);
+    else if (opts.textTransform === "lowercase") t = t.toLocaleLowerCase(opts.language);
+    else if (opts.textTransform === "capitalize") t = t.replace(/\b\w/g, (c) => c.toLocaleUpperCase(opts.language));
+
+    // Split span text into words and whitespace, preserving newlines
+    const parts = t.split(/(\n|\s+)/);
+    for (const part of parts) {
+      if (!part) continue;
+      if (part === "\n") {
+        tokens.push({ text: part, span, isSpace: false, isNewline: true });
+      } else if (/^\s+$/.test(part)) {
+        tokens.push({ text: part, span, isSpace: true, isNewline: false });
+      } else {
+        tokens.push({ text: part, span, isSpace: false, isNewline: false });
+      }
+    }
+  }
+
+  // Measure a token with its span style
+  function measureToken(tok: Token): number {
+    const fs = tok.span.fontSize ?? opts.fontSize;
+    const fw = tok.span.fontWeight ?? opts.fontWeight;
+    const fi = tok.span.fontStyle ?? "normal";
+    ctx.font = `${fi === "italic" ? "italic " : ""}${fw} ${fs}px ${opts.fontFamily}`;
+    return ctx.measureText(tok.text).width;
+  }
+
+  // Word-wrap into lines
+  const lines: Token[][] = [];
+  let currentLine: Token[] = [];
+  let lineWidth = 0;
+
+  for (const tok of tokens) {
+    if (tok.isNewline) {
+      lines.push(currentLine);
+      currentLine = [];
+      lineWidth = 0;
+      continue;
+    }
+    const tokW = measureToken(tok);
+    if (!tok.isSpace && lineWidth + tokW > box.w && currentLine.length > 0) {
+      lines.push(currentLine);
+      currentLine = [];
+      lineWidth = 0;
+    }
+    currentLine.push(tok);
+    lineWidth += tokW;
+  }
+  if (currentLine.length > 0) lines.push(currentLine);
+
+  // Draw each line
+  let y = box.y;
+  const align = opts.textAlign ?? "left";
+
+  for (const line of lines) {
+    let fullW = 0;
+    for (const tok of line) fullW += measureToken(tok);
+
+    let x = align === "center"
+      ? box.x + (box.w - fullW) / 2
+      : align === "right"
+        ? box.x + box.w - fullW
+        : box.x;
+
+    for (const tok of line) {
+      const s = tok.span;
+      const fs = s.fontSize ?? opts.fontSize;
+      const fw = s.fontWeight ?? opts.fontWeight;
+      const fi = s.fontStyle ?? "normal";
+      const fillColor = s.color ?? opts.color;
+
+      ctx.save();
+      if (s.opacity !== undefined && s.opacity < 1) ctx.globalAlpha *= s.opacity;
+      ctx.font = `${fi === "italic" ? "italic " : ""}${fw} ${fs}px ${opts.fontFamily}`;
+      if ("letterSpacing" in ctx) {
+        (ctx as any).letterSpacing = (s.letterSpacing ?? opts.letterSpacing) ? `${s.letterSpacing ?? opts.letterSpacing}px` : "0px";
+      }
+      ctx.fillStyle = fillColor;
+      ctx.textAlign = "left";
+      const tokW = ctx.measureText(tok.text).width;
+      ctx.fillText(tok.text, x, y);
+      ctx.restore();
+      x += tokW;
+    }
+    y += lh;
   }
   ctx.restore();
 }
@@ -704,8 +1370,28 @@ function drawElement(
   const color = anim?.color ?? resolveColor(el.color, theme, scene) ?? theme.primaryColor;
   const bgColor = anim?.backgroundColor ?? resolveColor(el.backgroundColor, theme, scene);
 
+  // Glow pre-pass: draw glow behind the element if glow is active
+  if (anim?.glowColor && anim.glowRadius && anim.glowIntensity) {
+    drawGlowEffect(ctx, box, anim.glowColor, anim.glowRadius, anim.glowIntensity, anim.glowPasses ?? 2);
+  } else if (el.glow) {
+    drawGlowEffect(ctx, box, el.glow.color, el.glow.radius, el.glow.intensity, el.glow.passes ?? 2);
+  }
+
   switch (el.type) {
     case "text":
+      // Per-word/char stagger animation
+      if (anim?.textStagger && sceneTimeMs !== undefined) {
+        drawTextStaggered(ctx, el.content || "", box, anim.textStagger, sceneTimeMs, {
+          color,
+          fontSize: el.fontSize ?? theme.fontSize,
+          fontWeight: el.fontWeight ?? theme.fontWeight,
+          fontFamily: resolveFont(el.fontId, theme),
+          textAlign: (el.textAlign as CanvasTextAlign) ?? "left",
+          lineHeight: el.lineHeight,
+          language,
+        });
+        break;
+      }
       drawText(ctx, el.content || "", box, {
         color,
         fontSize: el.fontSize ?? theme.fontSize,
@@ -719,12 +1405,34 @@ function drawElement(
         language,
         textStrokeColor: anim?.textStrokeColor ?? resolveColor(el.textStrokeColor, theme, scene),
         textStrokeWidth: anim?.textStrokeWidth ?? el.textStrokeWidth,
+        spans: el.spans?.map((s) => ({
+          ...s,
+          color: s.color ? (resolveColor(s.color, theme, scene) ?? s.color) : undefined,
+        })),
       });
       break;
 
     case "image": {
       const src = resolveMediaSrcLocal(el.content, projectDir);
       if (!src) break;
+
+      // Sprite sheet animation
+      if (el.sprite) {
+        const img = imageCache.get(src);
+        if (img) {
+          ctx.save();
+          if (el.borderRadius) {
+            roundRect(ctx, box.x, box.y, box.w, box.h, el.borderRadius);
+            ctx.clip();
+          }
+          drawSpriteFrame(ctx, img, el.sprite, box, sceneTimeMs ?? 0, el.timing?.enterMs ?? 0);
+          ctx.restore();
+        } else {
+          preloadImage(src).catch(() => {});
+        }
+        break;
+      }
+
       if (isVideoSrc(el.content)) {
         drawVideoFrame(ctx, el, src, box, el.borderRadius ?? theme.borderRadius, sceneTimeMs ?? 0, scene.durationMs);
       } else {
@@ -882,8 +1590,15 @@ function drawElement(
     }
 
     case "path": {
-      const d = el.content;
+      let d = el.content;
       if (!d) break;
+
+      // Path morphing: interpolate between source and target path
+      if (el.morph?.targetD && anim?.morphProgress !== undefined && anim.morphProgress > 0) {
+        const pointCount = el.morph.pointCount ?? 128;
+        d = interpolatePaths(d, el.morph.targetD, anim.morphProgress, pointCount);
+      }
+
       const strokeColor = resolveColor(el.pathStroke ?? el.color, theme, scene) ?? color;
       const fillColor = el.pathFill ? resolveColor(el.pathFill, theme, scene) : "none";
       const sw = el.pathStrokeWidth ?? 2;
@@ -954,6 +1669,59 @@ function drawElement(
       ctx.beginPath();
       ctx.arc(0, 0, r, 0, Math.PI * 2);
       ctx.stroke();
+      ctx.restore();
+      break;
+    }
+
+    case "lottie": {
+      // Lottie elements render as placeholder + info text until a Lottie runtime is loaded.
+      // The canvas renderer draws a styled placeholder box. A full lottie-web integration
+      // can render frames to an offscreen canvas and drawImage here.
+      ctx.save();
+      ctx.globalAlpha *= el.opacity ?? 1;
+      // Draw placeholder frame
+      const lottieConf = el.lottie;
+      if (lottieConf) {
+        // Check for a cached rendered frame (lottie-web would populate imageCache)
+        const lottieKey = `lottie:${lottieConf.src}`;
+        const cachedFrame = imageCache.get(lottieKey);
+        if (cachedFrame) {
+          ctx.drawImage(cachedFrame, box.x, box.y, box.w, box.h);
+        } else {
+          // Placeholder: semi-transparent box with "Lottie" label
+          ctx.fillStyle = "rgba(100,100,200,0.15)";
+          roundRect(ctx, box.x, box.y, box.w, box.h, 8);
+          ctx.fill();
+          ctx.fillStyle = color;
+          ctx.font = `600 ${Math.min(14, box.h / 4)}px sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText("Lottie", box.x + box.w / 2, box.y + box.h / 2);
+        }
+      }
+      ctx.restore();
+      break;
+    }
+
+    case "particle-emitter": {
+      const config = el.particles;
+      if (!config) break;
+      const particles = tickParticles(el.id, config, sceneTimeMs ?? 0, el.timing?.enterMs ?? 0);
+      const cx = box.x + box.w / 2;
+      const cy = box.y + box.h / 2;
+
+      ctx.save();
+      if (config.blendMode && config.blendMode !== "normal") {
+        ctx.globalCompositeOperation = config.blendMode as GlobalCompositeOperation;
+      }
+      for (const p of particles) {
+        drawParticleShape(
+          ctx, config.shape,
+          cx + p.x, cy + p.y,
+          p.size, p.color, p.opacity,
+          config.customShapePath,
+        );
+      }
       ctx.restore();
       break;
     }
@@ -1178,6 +1946,18 @@ export function renderComposition(
     ctx.restore();
   }
 
+  // Apply virtual camera transform
+  if (comp.camera && comp.camera.keyframes.length > 0) {
+    const cam = interpolateCamera(comp.camera, timeMs);
+    const cxCam = w / 2;
+    const cyCam = h / 2;
+    ctx.save();
+    ctx.translate(cxCam, cyCam);
+    ctx.scale(cam.zoom, cam.zoom);
+    if (cam.rotation) ctx.rotate((cam.rotation * Math.PI) / 180);
+    ctx.translate(-cxCam - cam.x, -cyCam - cam.y);
+  }
+
   // Render layers bottom to top
   for (const layer of comp.layers) {
     if (layer.enabled === false) continue;
@@ -1216,7 +1996,14 @@ export function renderComposition(
           }
           const ax = el.anchorX ?? 0;
           const ay = el.anchorY ?? 0;
-          const box: LayoutBox = { x: (el.x ?? 0) - ax * sz.w, y: (el.y ?? 0) - ay * sz.h, w: sz.w, h: sz.h };
+          let box: LayoutBox = { x: (el.x ?? 0) - ax * sz.w, y: (el.y ?? 0) - ay * sz.h, w: sz.w, h: sz.h };
+
+          // Motion path: override position based on path progress
+          if (el.motionPath && anim.motionProgress !== undefined) {
+            const mp = sampleMotionPath(el.motionPath.d, anim.motionProgress);
+            const origin = el.motionPath.alignOrigin ?? [0.5, 0.5];
+            box = { x: mp.x - origin[0] * sz.w, y: mp.y - origin[1] * sz.h, w: sz.w, h: sz.h };
+          }
 
           ctx.save();
           // Apply animation transforms
@@ -1228,6 +2015,11 @@ export function renderComposition(
           if (el.scale != null && el.scale !== 1) ctx.scale(el.scale, el.scale);
           else if (el.scaleX != null || el.scaleY != null) ctx.scale(el.scaleX ?? 1, el.scaleY ?? 1);
           if (el.rotation) ctx.rotate((el.rotation * Math.PI) / 180);
+          // Motion path auto-rotation
+          if (el.motionPath?.autoRotate && anim.motionProgress !== undefined) {
+            const mp = sampleMotionPath(el.motionPath.d, anim.motionProgress);
+            ctx.rotate((mp.angle * Math.PI) / 180);
+          }
           const translateMatch = transform.match(/translate\(([^,]+)px,\s*([^)]+)px\)/);
           if (translateMatch) ctx.translate(parseFloat(translateMatch[1]), parseFloat(translateMatch[2]));
           const scaleMatch = transform.match(/scale\(([^,)]+)(?:,\s*([^)]+))?\)/);
@@ -1264,8 +2056,18 @@ export function renderComposition(
       case "caption":
         // Audio/caption layers are not rendered visually here
         break;
+
+      case "symbol":
+        // Symbol instance: resolve from symbols library (handled at document level)
+        // TODO: resolve symbol elements and render with overrides
+        break;
     }
 
+    ctx.restore();
+  }
+
+  // Close camera transform
+  if (comp.camera && comp.camera.keyframes.length > 0) {
     ctx.restore();
   }
 }
@@ -1381,7 +2183,14 @@ export function renderSceneToCanvas(
 
     const ax = el.anchorX ?? 0;
     const ay = el.anchorY ?? 0;
-    const box: LayoutBox = { x: (el.x ?? 0) - ax * sz.w, y: (el.y ?? 0) - ay * sz.h, w: sz.w, h: sz.h };
+    let box: LayoutBox = { x: (el.x ?? 0) - ax * sz.w, y: (el.y ?? 0) - ay * sz.h, w: sz.w, h: sz.h };
+
+    // Motion path: override position based on path progress
+    if (el.motionPath && anim.motionProgress !== undefined) {
+      const mp = sampleMotionPath(el.motionPath.d, anim.motionProgress);
+      const origin = el.motionPath.alignOrigin ?? [0.5, 0.5];
+      box = { x: mp.x - origin[0] * sz.w, y: mp.y - origin[1] * sz.h, w: sz.w, h: sz.h };
+    }
 
     // Apply transforms
     ctx.save();
@@ -1409,6 +2218,12 @@ export function renderSceneToCanvas(
     const cy = box.y + box.h / 2;
 
     ctx.translate(cx, cy);
+
+    // Motion path auto-rotation
+    if (el.motionPath?.autoRotate && anim.motionProgress !== undefined) {
+      const mp = sampleMotionPath(el.motionPath.d, anim.motionProgress);
+      ctx.rotate((mp.angle * Math.PI) / 180);
+    }
 
     // Static element transforms (scale, rotation)
     if (el.scale != null && el.scale !== 1) {

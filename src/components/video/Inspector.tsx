@@ -4,6 +4,7 @@ import { useTimelineStore, getSceneAtTime, getSceneStartMs, type InspectorTarget
 import type {
   SceneElement, AudioTrackType, CaptionStyle,
   CaptionTrack, CaptionSegment, AudioTrack, VideoScene,
+  TextSpan,
 } from "@/types/schema";
 import { getEffectDefinition, EFFECT_DEFINITIONS } from "@/data/effectsLibrary";
 import { ColorPicker } from "@/components/ColorPicker";
@@ -45,6 +46,106 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <h3 className={styles.panelTitle}>{children}</h3>;
+}
+
+function InspectorSpanEditor({
+  el,
+  sceneId,
+  updateSceneElement,
+}: {
+  el: SceneElement;
+  sceneId: string;
+  updateSceneElement: (sceneId: string, elId: string, patch: Partial<SceneElement>) => void;
+}) {
+  const spans = el.spans ?? [];
+
+  const addSpan = () => {
+    const newSpan: TextSpan = { text: "Text" };
+    updateSceneElement(sceneId, el.id, { spans: [...spans, newSpan] });
+  };
+
+  const initFromContent = () => {
+    updateSceneElement(sceneId, el.id, { spans: [{ text: el.content || "Text" }] });
+  };
+
+  const updateSpan = (idx: number, patch: Partial<TextSpan>) => {
+    const next = spans.map((s, i) => (i === idx ? { ...s, ...patch } : s));
+    updateSceneElement(sceneId, el.id, { spans: next, content: next.map((s) => s.text).join("") });
+  };
+
+  const removeSpan = (idx: number) => {
+    const next = spans.filter((_, i) => i !== idx);
+    updateSceneElement(sceneId, el.id, {
+      spans: next.length > 0 ? next : undefined,
+      content: next.length > 0 ? next.map((s) => s.text).join("") : el.content,
+    });
+  };
+
+  return (
+    <>
+      <Row label="Spans">
+        {spans.length === 0 ? (
+          <button
+            onClick={initFromContent}
+            style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, border: "1px solid #3a3a3e", background: "#2a2a2e", color: "#aaa", cursor: "pointer" }}
+          >
+            Enable Spans
+          </button>
+        ) : (
+          <button
+            onClick={addSpan}
+            style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, border: "1px solid #3a3a3e", background: "#2a2a2e", color: "#aaa", cursor: "pointer" }}
+          >
+            + Span
+          </button>
+        )}
+      </Row>
+      {spans.map((span, idx) => (
+        <div
+          key={idx}
+          style={{ marginLeft: 8, marginBottom: 8, padding: "6px 8px", border: "1px solid #333", borderRadius: 6, fontSize: 11 }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+            <span style={{ color: "#888" }}>Span {idx + 1}</span>
+            <button
+              onClick={() => removeSpan(idx)}
+              style={{ fontSize: 10, padding: "1px 5px", borderRadius: 3, border: "1px solid #444", background: "transparent", color: "#888", cursor: "pointer" }}
+            >
+              ✕
+            </button>
+          </div>
+          <Row label="Text">
+            <input type="text" value={span.text}
+              onChange={(e) => updateSpan(idx, { text: e.target.value })}
+              style={{ flex: 1, fontSize: 11, padding: "3px 6px", borderRadius: 4, border: "1px solid #3a3a3e", background: "#2a2a2e", color: "#ddd" }} />
+          </Row>
+          <Row label="Color">
+            <ColorPicker value={span.color} onChange={(v) => updateSpan(idx, { color: v || undefined })} allowNone noneLabel="Inherit" />
+          </Row>
+          <Row label="Weight">
+            <select value={span.fontWeight ?? ""} onChange={(e) => updateSpan(idx, { fontWeight: e.target.value ? Number(e.target.value) : undefined })}
+              style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}>
+              <option value="">Inherit</option>
+              {[300, 400, 500, 600, 700, 800, 900].map((w) => <option key={w} value={w}>{w}</option>)}
+            </select>
+          </Row>
+          <Row label="Style">
+            <select value={span.fontStyle ?? ""} onChange={(e) => updateSpan(idx, { fontStyle: (e.target.value || undefined) as "normal" | "italic" | undefined })}
+              style={{ flex: 1, fontSize: 11, padding: "3px 6px" }}>
+              <option value="">Inherit</option>
+              <option value="normal">Normal</option>
+              <option value="italic">Italic</option>
+            </select>
+          </Row>
+          <Row label="Size">
+            <input type="number" value={span.fontSize ?? ""} placeholder="Inherit" min={8} max={200}
+              style={{ width: 60, fontSize: 11, padding: "3px 6px" }}
+              onChange={(e) => updateSpan(idx, { fontSize: e.target.value ? Number(e.target.value) : undefined })} />
+          </Row>
+        </div>
+      ))}
+    </>
+  );
 }
 
 /* ===== ELEMENT TREE (recursive list) ===== */
@@ -445,6 +546,9 @@ function ElementInspector({ sceneId, elementId }: { sceneId: string; elementId: 
                 {Math.round((el.opacity ?? 1) * 100)}%
               </span>
             </Row>
+
+            {/* Inline text spans */}
+            <InspectorSpanEditor el={el} sceneId={sceneId} updateSceneElement={updateSceneElement} />
           </>
         )}
 

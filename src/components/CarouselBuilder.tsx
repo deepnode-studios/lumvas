@@ -4,7 +4,7 @@ import { useRef, useState, useCallback, useEffect } from "react";
 import { useLumvasStore, selectSlideContent, createElement } from "@/store/useLumvasStore";
 import { useFileStore } from "@/store/useFileStore";
 import { writeMediaFromDataUri } from "@/utils/lumvasFile";
-import type { ElementType, SlideElement, FlexAlign, FlexJustify, FlexDirection, BackgroundPattern, IconLibrary, ChartType, ChartDataPoint } from "@/types/schema";
+import type { ElementType, SlideElement, FlexAlign, FlexJustify, FlexDirection, BackgroundPattern, IconLibrary, ChartType, ChartDataPoint, TextSpan } from "@/types/schema";
 import { legacyNameToLucide } from "@/data/iconLibraries";
 import { TemplateGallery } from "./TemplateGallery";
 import { PanelSection } from "./PanelSection";
@@ -39,6 +39,12 @@ const ELEMENT_ICONS: Record<ElementType, string> = {
   icon: "★",
   group: "[ ]",
   chart: "▥",
+  counter: "#",
+  path: "✏",
+  svg: "◇",
+  indicator: "◉",
+  lottie: "▶",
+  "particle-emitter": "✦",
 };
 
 function fileToBase64(file: File): Promise<string> {
@@ -57,6 +63,180 @@ async function uploadMediaFile(file: File, prefix: string = "img"): Promise<stri
     return await writeMediaFromDataUri(projectDir, b64, prefix);
   }
   return b64;
+}
+
+function SpanEditor({
+  el,
+  update,
+}: {
+  el: SlideElement;
+  update: (patch: Partial<SlideElement>) => void;
+}) {
+  const spans = el.spans ?? [];
+
+  const addSpan = () => {
+    const newSpan: TextSpan = { text: "Text" };
+    update({ spans: [...spans, newSpan] });
+  };
+
+  const initFromContent = () => {
+    // Split current content into a single span to start editing
+    update({ spans: [{ text: el.content || "Text" }] });
+  };
+
+  const updateSpan = (idx: number, patch: Partial<TextSpan>) => {
+    const next = spans.map((s, i) => (i === idx ? { ...s, ...patch } : s));
+    update({ spans: next, content: next.map((s) => s.text).join("") });
+  };
+
+  const removeSpan = (idx: number) => {
+    const next = spans.filter((_, i) => i !== idx);
+    update({ spans: next.length > 0 ? next : undefined, content: next.length > 0 ? next.map((s) => s.text).join("") : el.content });
+  };
+
+  return (
+    <>
+      <div className={styles.fieldRow} style={{ alignItems: "center" }}>
+        <label>Spans</label>
+        {spans.length === 0 ? (
+          <button
+            className={styles.btnSmall}
+            onClick={initFromContent}
+            title="Convert text to spans for per-segment styling"
+          >
+            Enable Spans
+          </button>
+        ) : (
+          <button
+            className={styles.btnSmall}
+            onClick={addSpan}
+            title="Add another styled segment"
+          >
+            + Span
+          </button>
+        )}
+      </div>
+      {spans.map((span, idx) => (
+        <div
+          key={idx}
+          style={{
+            marginLeft: 4,
+            marginBottom: 8,
+            padding: "6px 8px",
+            border: "1px solid var(--border, #333)",
+            borderRadius: 6,
+            fontSize: 12,
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+            <span style={{ opacity: 0.6 }}>Span {idx + 1}</span>
+            <button className={styles.btnSmall} onClick={() => removeSpan(idx)} style={{ fontSize: 11 }}>✕</button>
+          </div>
+
+          <div className={styles.fieldRow}>
+            <label>Text</label>
+            <input
+              type="text"
+              value={span.text}
+              onChange={(e) => updateSpan(idx, { text: e.target.value })}
+            />
+          </div>
+
+          <div className={styles.fieldRow}>
+            <label>Color</label>
+            <ColorPicker
+              value={span.color ?? "primary"}
+              onChange={(v) => updateSpan(idx, { color: v === "primary" ? undefined : v })}
+            />
+          </div>
+
+          <div className={styles.fieldRow}>
+            <label>Weight</label>
+            <select
+              value={span.fontWeight ?? ""}
+              onChange={(e) =>
+                updateSpan(idx, { fontWeight: e.target.value ? Number(e.target.value) : undefined })
+              }
+            >
+              <option value="">Inherit</option>
+              {[300, 400, 500, 600, 700, 800, 900].map((w) => (
+                <option key={w} value={w}>{w}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className={styles.fieldRow}>
+            <label>Style</label>
+            <select
+              value={span.fontStyle ?? ""}
+              onChange={(e) =>
+                updateSpan(idx, { fontStyle: (e.target.value || undefined) as "normal" | "italic" | undefined })
+              }
+            >
+              <option value="">Inherit</option>
+              <option value="normal">Normal</option>
+              <option value="italic">Italic</option>
+            </select>
+          </div>
+
+          <div className={styles.fieldRow}>
+            <label>Size</label>
+            <input
+              type="number"
+              value={span.fontSize ?? ""}
+              placeholder="Inherit"
+              min={8}
+              max={200}
+              onChange={(e) =>
+                updateSpan(idx, { fontSize: e.target.value ? Number(e.target.value) : undefined })
+              }
+            />
+          </div>
+
+          <div className={styles.fieldRow}>
+            <label>Opacity</label>
+            <input
+              type="number"
+              value={span.opacity ?? ""}
+              placeholder="Inherit"
+              min={0}
+              max={1}
+              step={0.05}
+              onChange={(e) =>
+                updateSpan(idx, { opacity: e.target.value ? Number(e.target.value) : undefined })
+              }
+            />
+          </div>
+
+          <div className={styles.fieldRow}>
+            <label>Gradient</label>
+            <select
+              value={span.backgroundGradient ? "on" : "none"}
+              onChange={(e) =>
+                updateSpan(idx, {
+                  backgroundGradient: e.target.value === "on"
+                    ? span.backgroundGradient || "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
+                    : undefined,
+                })
+              }
+            >
+              <option value="none">None</option>
+              <option value="on">On</option>
+            </select>
+          </div>
+          {span.backgroundGradient && (
+            <div className={styles.fieldRow}>
+              <label></label>
+              <GradientEditor
+                value={span.backgroundGradient}
+                onChange={(v) => updateSpan(idx, { backgroundGradient: v })}
+              />
+            </div>
+          )}
+        </div>
+      ))}
+    </>
+  );
 }
 
 function ElementEditor({
@@ -82,8 +262,8 @@ function ElementEditor({
 
   return (
     <div className={builderStyles.elementEditor}>
-      {/* Content */}
-      {el.type === "text" && (
+      {/* Content (hidden when spans are active — text is edited per-span) */}
+      {el.type === "text" && !(el.spans && el.spans.length > 0) && (
         <div className={styles.fieldRow} style={{ alignItems: "flex-start" }}>
           <label style={{ paddingTop: 6 }}>Content</label>
           <textarea
@@ -265,6 +445,11 @@ function ElementEditor({
               <option value="capitalize">Capitalize</option>
             </select>
           </div>
+
+          {/* Inline text spans */}
+          {el.type === "text" && (
+            <SpanEditor el={el} update={update} />
+          )}
         </>
       )}
 

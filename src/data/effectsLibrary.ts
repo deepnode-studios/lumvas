@@ -549,13 +549,104 @@ export const EFFECT_DEFINITIONS: EffectDefinition[] = [
     ],
   },
 
+  // ─── GLOW ─────────────────────────────────────────────────────────────────
+  {
+    id: "glow",
+    label: "Glow",
+    category: "filter",
+    icon: "✧",
+    description: "Soft light emission / outer glow around the element. Renders the element multiple times with blur + additive blend.",
+    defaultTrigger: "lifetime",
+    params: [
+      { key: "color", label: "Glow Color", type: "color", default: "#ffffff" },
+      { key: "radius", label: "Radius (px)", type: "number", min: 2, max: 80, step: 1, default: 16 },
+      { key: "intensity", label: "Intensity", type: "number", min: 0, max: 1, step: 0.05, default: 0.6 },
+      { key: "passes", label: "Passes", type: "number", min: 1, max: 5, step: 1, default: 2 },
+      { key: "pulse", label: "Pulse", type: "boolean", default: false },
+      { key: "pulseSpeed", label: "Pulse Speed", type: "number", min: 0.1, max: 5, step: 0.1, default: 1 },
+    ],
+  },
+
+  // ─── MORPH ───────────────────────────────────────────────────────────────
+  {
+    id: "morph",
+    label: "Path Morph",
+    category: "draw",
+    icon: "⟲",
+    description: "Smoothly morph between the element's SVG path and a target path shape. Use on 'path' elements with a morph config.",
+    defaultTrigger: "lifetime",
+    params: [
+      { key: "easing", label: "Easing", type: "select", options: [
+        { value: "linear", label: "Linear" },
+        { value: "ease-in-out", label: "Ease In-Out" },
+        { value: "ease-out", label: "Ease Out" },
+      ], default: "ease-in-out" },
+    ],
+  },
+
+  // ─── MOTION PATH ─────────────────────────────────────────────────────────
+  {
+    id: "motion-path",
+    label: "Motion Path",
+    category: "motion",
+    icon: "⤳",
+    description: "Element follows a bezier curve path. Define the path on the element's motionPath property and animate motionProgress via keyframes.",
+    defaultTrigger: "lifetime",
+    params: [
+      { key: "easing", label: "Easing", type: "select", options: [
+        { value: "linear", label: "Linear" },
+        { value: "ease-in", label: "Ease In" },
+        { value: "ease-out", label: "Ease Out" },
+        { value: "ease-in-out", label: "Ease In-Out" },
+      ], default: "ease-in-out" },
+    ],
+  },
+
+  // ─── TEXT STAGGER ────────────────────────────────────────────────────────
+  {
+    id: "text-stagger",
+    label: "Text Stagger",
+    category: "text",
+    icon: "⟫",
+    description: "Animate text per-word or per-character with staggered timing. Each unit gets an independent enter animation.",
+    defaultTrigger: "enter",
+    defaultDurationMs: 1200,
+    params: [
+      { key: "unit", label: "Unit", type: "select", options: [
+        { value: "character", label: "Character" },
+        { value: "word", label: "Word" },
+        { value: "line", label: "Line" },
+      ], default: "word" },
+      { key: "staggerMs", label: "Stagger (ms)", type: "number", min: 10, max: 500, step: 10, default: 60 },
+      { key: "staggerFrom", label: "Stagger From", type: "select", options: [
+        { value: "start", label: "Start" },
+        { value: "end", label: "End" },
+        { value: "center", label: "Center" },
+        { value: "random", label: "Random" },
+      ], default: "start" },
+      { key: "animation", label: "Animation", type: "select", options: [
+        { value: "fade-up", label: "Fade Up" },
+        { value: "fade-in", label: "Fade In" },
+        { value: "scale-in", label: "Scale In" },
+        { value: "blur-in", label: "Blur In" },
+        { value: "drop-in", label: "Drop In" },
+      ], default: "fade-up" },
+      { key: "durationMs", label: "Duration (ms)", type: "number", min: 100, max: 5000, step: 50, default: 1200 },
+      { key: "easing", label: "Easing", type: "select", options: [
+        { value: "ease-out", label: "Ease Out" },
+        { value: "ease-in-out", label: "Ease In-Out" },
+        { value: "spring", label: "Spring" },
+      ], default: "ease-out" },
+    ],
+  },
+
   // ─── KEYFRAMES ────────────────────────────────────────────────────────────
   {
     id: "custom-keyframes",
     label: "Custom Keyframes",
     category: "keyframes",
     icon: "◆",
-    description: "Animate any property over the element lifetime with custom keyframes. Supports opacity, x, y, scale, rotation, blur, color, backgroundColor, drawProgress, letterSpacing, textStrokeColor, and textStrokeWidth.",
+    description: "Animate any property over the element lifetime with custom keyframes. Supports opacity, x, y, scale, rotation, blur, color, backgroundColor, drawProgress, letterSpacing, textStrokeColor, textStrokeWidth, motionProgress, and morphProgress.",
     defaultTrigger: "lifetime",
     params: [
       { key: "keyframes", label: "Keyframes", type: "keyframes", default: [] },
@@ -651,4 +742,44 @@ export const EFFECT_CATEGORIES: { id: string; label: string }[] = [
   { id: "text", label: "Text" },
   { id: "draw", label: "Draw" },
   { id: "keyframes", label: "Keyframes" },
+];
+
+/** Industry-standard combo presets for common animation patterns */
+export const ADVANCED_COMBOS: EffectCombo[] = [
+  {
+    id: "cinematic-text-reveal",
+    label: "Cinematic Text Reveal",
+    icon: "🎬",
+    description: "Per-word staggered fade-up with glow emphasis — ideal for title reveals.",
+    effects: [
+      { definitionId: "text-stagger", trigger: "enter", durationMs: 1200, enabled: true,
+        params: { unit: "word", staggerMs: 80, staggerFrom: "start", animation: "fade-up", durationMs: 1200, easing: "ease-out" } },
+      { definitionId: "glow", trigger: "lifetime", enabled: true,
+        params: { color: "#ffffff", radius: 12, intensity: 0.3, passes: 1, pulse: false, pulseSpeed: 1 } },
+    ],
+  },
+  {
+    id: "character-walk",
+    label: "Character Walk",
+    icon: "🚶",
+    description: "Element follows a motion path with gentle float — for character entrances.",
+    effects: [
+      { definitionId: "motion-path", trigger: "lifetime", enabled: true,
+        params: { easing: "ease-in-out" } },
+      { definitionId: "boil", trigger: "lifetime", enabled: true,
+        params: { amplitude: 1.5, speed: 8 } },
+    ],
+  },
+  {
+    id: "morph-transition",
+    label: "Morph Transition",
+    icon: "⟲",
+    description: "Smooth shape morph between two SVG paths with glow.",
+    effects: [
+      { definitionId: "morph", trigger: "lifetime", enabled: true,
+        params: { easing: "ease-in-out" } },
+      { definitionId: "glow", trigger: "lifetime", enabled: true,
+        params: { color: "#4ecdc4", radius: 20, intensity: 0.4, passes: 2, pulse: true, pulseSpeed: 0.5 } },
+    ],
+  },
 ];

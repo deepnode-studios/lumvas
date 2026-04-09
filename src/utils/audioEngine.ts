@@ -1,7 +1,10 @@
 /**
  * Web Audio API engine for synchronized multi-track playback.
  * Manages loading, playing, pausing, and volume control for multiple audio tracks.
+ * Supports volume keyframe automation and ducking (auto-lower music when narration plays).
  */
+
+import type { AudioKeyframe, AudioDuckingConfig, Easing } from "@/types/schema";
 
 interface LoadedTrack {
   buffer: AudioBuffer;
@@ -13,6 +16,10 @@ interface LoadedTrack {
   volume: number;
   fadeInMs: number;
   fadeOutMs: number;
+  /** Volume automation keyframes */
+  volumeKeyframes?: AudioKeyframe[];
+  /** Ducking config */
+  ducking?: AudioDuckingConfig;
 }
 
 export class AudioEngine {
@@ -49,6 +56,8 @@ export class AudioEngine {
       trimEndMs?: number;
       fadeInMs?: number;
       fadeOutMs?: number;
+      volumeKeyframes?: AudioKeyframe[];
+      ducking?: AudioDuckingConfig;
     },
   ): Promise<number> {
     const ctx = this.getContext();
@@ -67,6 +76,8 @@ export class AudioEngine {
       volume: opts.volume,
       fadeInMs: opts.fadeInMs ?? 0,
       fadeOutMs: opts.fadeOutMs ?? 0,
+      volumeKeyframes: opts.volumeKeyframes,
+      ducking: opts.ducking,
     });
 
     return Math.round(buffer.duration * 1000);
@@ -144,6 +155,68 @@ export class AudioEngine {
     return this.playOffsetMs + (this.ctx.currentTime - this.playStartTime) * 1000;
   }
 
+  /**
+   * Interpolate volume at a given time from volume keyframes.
+   * Returns the interpolated volume (0–1), or the track's static volume if no keyframes.
+   */
+  private interpolateVolumeKeyframes(track: LoadedTrack, videoTimeMs: number): number {
+    const kfs = track.volumeKeyframes;
+    if (!kfs || kfs.length === 0) return track.volume;
+
+    if (videoTimeMs <= kfs[0].timeMs) return kfs[0].volume;
+    if (videoTimeMs >= kfs[kfs.length - 1].timeMs) return kfs[kfs.length - 1].volume;
+
+    let before = kfs[0];
+    let after = kfs[kfs.length - 1];
+    for (let i = 0; i < kfs.length - 1; i++) {
+      if (videoTimeMs >= kfs[i].timeMs && videoTimeMs <= kfs[i + 1].timeMs) {
+        before = kfs[i];
+        after = kfs[i + 1];
+        break;
+      }
+    }
+
+    const range = after.timeMs - before.timeMs;
+    const t = range > 0 ? (videoTimeMs - before.timeMs) / range : 0;
+    return before.volume + (after.volume - before.volume) * t;
+  }
+
+  /**
+   * Check if a trigger track is currently active (has audio playing) at the given time.
+   * Used for ducking — determines if the target track should be lowered.
+   */
+  private isTrackActiveAt(trackId: string, videoTimeMs: number): boolean {
+    const track = this.tracks.get(trackId);
+    if (!track) return false;
+    const trackStartInVideo = track.startMs;
+    const trackEndInVideo = track.startMs + (track.trimEndMs != null
+      ? track.trimEndMs - (track.trimStartMs ?? 0)
+      : track.buffer.duration * 1000 - (track.trimStartMs ?? 0));
+    return videoTimeMs >= trackStartInVideo && videoTimeMs <= trackEndInVideo;
+  }
+
+  /**
+   * Apply volume keyframes and ducking for a given video time.
+   * Should be called periodically during playback (e.g., via requestAnimationFrame).
+   */
+  applyVolumeAutomation(videoTimeMs: number): void {
+    if (!this.ctx) return;
+    for (const [id, track] of this.tracks) {
+      let vol = this.interpolateVolumeKeyframes(track, videoTimeMs);
+
+      // Apply ducking
+      if (track.ducking) {
+        const triggerActive = this.isTrackActiveAt(track.ducking.triggerTrackId, videoTimeMs);
+        if (triggerActive) {
+          vol *= track.ducking.duckAmount;
+        }
+      }
+
+      // Set gain (smoothed to avoid clicks)
+      track.gain.gain.setTargetAtTime(vol, this.ctx.currentTime, 0.05);
+    }
+  }
+
   /** Clean up all resources */
   dispose(): void {
     this.stopAllSources();
@@ -189,6 +262,16 @@ export class AudioEngine {
       if (fadeOutStart > 0) {
         track.gain.gain.setValueAtTime(track.volume, ctx.currentTime + fadeOutStart);
         track.gain.gain.linearRampToValueAtTime(0, ctx.currentTime + fadeOutStart + track.fadeOutMs / 1000);
+      }
+    }
+
+    // Schedule volume keyframes as Web Audio gain automation events
+    if (track.volumeKeyframes && track.volumeKeyframes.length > 0) {
+      const baseTime = ctx.currentTime;
+      for (const kf of track.volumeKeyframes) {
+        const kfOffsetSec = (kf.timeMs - fromMs) / 1000;
+        if (kfOffsetSec < 0) continue;
+        track.gain.gain.linearRampToValueAtTime(kf.volume, baseTime + kfOffsetSec);
       }
     }
 

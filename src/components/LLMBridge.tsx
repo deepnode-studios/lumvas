@@ -276,6 +276,11 @@ Each slide's "elements" is an ordered array of content blocks. Each element has:
 
 **"text"** — A text block. Set "content" to the text string.
   Styling: fontId (font token ID, e.g. "header", "body", or custom), fontSize (px), fontWeight (300-900), fontStyle ("normal"|"italic"), textAlign ("left"|"center"|"right"), letterSpacing (px), lineHeight (number), opacity (0-1), textTransform ("none"|"uppercase"|"lowercase"|"capitalize"), color (hex or token: "primary", "secondary", "background"), maxWidth (CSS string e.g. "80%"), backgroundGradient (CSS gradient string, e.g. "linear-gradient(90deg, #ff0000, #0000ff)") — applies as a gradient text fill (background-clip: text), overrides color.
+  Inline spans: "spans" is an optional array of text segments that replace "content" for rendering. When present, the text is composed by concatenating all span texts in order. Each span object has:
+    - "text": the literal text string for this segment (required).
+    - Optional style overrides: "color" (hex or token), "fontWeight" (300-900), "fontStyle" ("normal"|"italic"), "fontSize" (px), "opacity" (0-1), "letterSpacing" (px), "backgroundGradient" (CSS gradient string).
+    Segments without style overrides inherit the element's base styles. When using spans, also set "content" to the full plain text (concatenation of all span texts) for backwards compatibility.
+    Example: { "type": "text", "content": "Build something amazing", "spans": [{ "text": "Build something " }, { "text": "amazing", "color": "#ff6600", "fontWeight": 700 }] } — highlights "amazing" in orange bold.
 
 **"image"** — An image block. Set "content" to the image URL. Images uploaded in the UI appear as "[uploaded: mime, size]" — do not modify these placeholders.
   Styling: width (CSS string), height (CSS string), objectFit ("cover"|"contain"|"fill"), borderRadius (px), maxWidth (CSS string).

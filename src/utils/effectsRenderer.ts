@@ -1,4 +1,4 @@
-import type { SceneElement, Effect, Keyframe, KeyframeProperties, Easing, EasingPreset, CubicBezierEasing } from "@/types/schema";
+import type { SceneElement, Effect, Keyframe, KeyframeProperties, Easing, EasingPreset, CubicBezierEasing, LoopMode } from "@/types/schema";
 import type { ComputedElementStyle } from "./animation";
 import { lerpColor } from "./animation";
 import { getEffectDefinition } from "@/data/effectsLibrary";
@@ -54,6 +54,23 @@ interface EffectState {
   letterSpacing?: number;
   textStrokeColor?: string;
   textStrokeWidth?: number;
+  motionProgress?: number;
+  morphProgress?: number;
+  /** Glow state — accumulated from glow effects */
+  glowColor?: string;
+  glowRadius?: number;
+  glowIntensity?: number;
+  glowPasses?: number;
+  /** Text stagger state — stored for canvas renderer to decompose text */
+  textStagger?: {
+    unit: string;
+    staggerMs: number;
+    staggerFrom: string;
+    animation: string;
+    durationMs: number;
+    easing: string;
+    enterMs: number;
+  };
 }
 
 const IDENTITY: EffectState = { x: 0, y: 0, scale: 1, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1, blur: 0 };
@@ -83,7 +100,8 @@ function propsToState(p: KeyframeProperties): Partial<EffectState> {
   return { x: p.x, y: p.y, scale: p.scale, scaleX: p.scaleX, scaleY: p.scaleY,
            rotation: p.rotation, opacity: p.opacity, blur: p.blur,
            color: p.color, backgroundColor: p.backgroundColor, drawProgress: p.drawProgress,
-           letterSpacing: p.letterSpacing, textStrokeColor: p.textStrokeColor, textStrokeWidth: p.textStrokeWidth };
+           letterSpacing: p.letterSpacing, textStrokeColor: p.textStrokeColor, textStrokeWidth: p.textStrokeWidth,
+           motionProgress: p.motionProgress, morphProgress: p.morphProgress };
 }
 
 function lerpProps(a: KeyframeProperties, b: KeyframeProperties, t: number): Partial<EffectState> {
@@ -107,6 +125,10 @@ function lerpProps(a: KeyframeProperties, b: KeyframeProperties, t: number): Par
     r.textStrokeColor = lerpColor(a.textStrokeColor ?? b.textStrokeColor!, b.textStrokeColor ?? a.textStrokeColor!, t);
   if (a.textStrokeWidth !== undefined || b.textStrokeWidth !== undefined)
     r.textStrokeWidth = lerp(a.textStrokeWidth ?? 0, b.textStrokeWidth ?? 0, t);
+  if (a.motionProgress !== undefined || b.motionProgress !== undefined)
+    r.motionProgress = lerp(a.motionProgress ?? 0, b.motionProgress ?? 1, t);
+  if (a.morphProgress !== undefined || b.morphProgress !== undefined)
+    r.morphProgress = lerp(a.morphProgress ?? 0, b.morphProgress ?? 1, t);
   return r;
 }
 
@@ -212,6 +234,18 @@ function applyEffect(
       case "scramble":
         // text-layer effect — not a transform, skip
         break;
+      case "text-stagger": {
+        // Pass stagger config to state — canvas renderer decomposes and animates per-unit
+        const unit = (p.unit as string | undefined) ?? "word";
+        const staggerMs = (p.staggerMs as number | undefined) ?? 60;
+        const staggerFrom = (p.staggerFrom as string | undefined) ?? "start";
+        const animation = (p.animation as string | undefined) ?? "fade-up";
+        const dur = (p.durationMs as number | undefined) ?? 1200;
+        const easingKey = (p.easing as string | undefined) ?? "ease-out";
+        state.textStagger = { unit, staggerMs, staggerFrom, animation, durationMs: dur, easing: easingKey, enterMs: enterMs };
+        // Overall opacity = 1 (individual units handle their own)
+        break;
+      }
     }
     return;
   }
@@ -352,7 +386,19 @@ function applyEffect(
         break;
       case "custom-keyframes": {
         const keyframes = (p.keyframes as Keyframe[] | undefined) ?? [];
-        const kfState = interpolateKeyframes(keyframes, lifetimeProgress);
+        // Apply loop logic: remap lifetimeProgress based on loopCount/loopMode
+        let kfProgress = lifetimeProgress;
+        const loopCount = effect.loopCount ?? 1;
+        const loopMode: LoopMode = effect.loopMode ?? "repeat";
+        if (loopCount > 1 || loopCount === Infinity) {
+          const cycleProgress = lifetimeProgress * (loopCount === Infinity ? 1e6 : loopCount);
+          const cycle = Math.floor(cycleProgress);
+          let frac = cycleProgress - cycle;
+          if (loopMode === "ping-pong" && cycle % 2 === 1) frac = 1 - frac;
+          if (loopMode === "hold-last" && cycleProgress >= (loopCount === Infinity ? 1e6 : loopCount)) frac = 1;
+          kfProgress = frac;
+        }
+        const kfState = interpolateKeyframes(keyframes, kfProgress);
         if (kfState.x !== undefined) state.x += kfState.x;
         if (kfState.y !== undefined) state.y += kfState.y;
         if (kfState.scale !== undefined) state.scale *= kfState.scale;
@@ -367,6 +413,35 @@ function applyEffect(
         if (kfState.letterSpacing !== undefined) state.letterSpacing = (state.letterSpacing ?? 0) + kfState.letterSpacing;
         if (kfState.textStrokeColor !== undefined) state.textStrokeColor = kfState.textStrokeColor;
         if (kfState.textStrokeWidth !== undefined) state.textStrokeWidth = kfState.textStrokeWidth;
+        if (kfState.motionProgress !== undefined) state.motionProgress = kfState.motionProgress;
+        if (kfState.morphProgress !== undefined) state.morphProgress = kfState.morphProgress;
+        break;
+      }
+      case "glow": {
+        const glowColor = (p.color as string | undefined) ?? "#ffffff";
+        const radius = (p.radius as number | undefined) ?? 16;
+        const intensity = (p.intensity as number | undefined) ?? 0.6;
+        const passes = (p.passes as number | undefined) ?? 2;
+        const pulse = (p.pulse as boolean | undefined) ?? false;
+        const pulseSpeed = (p.pulseSpeed as number | undefined) ?? 1;
+        let effectiveIntensity = intensity;
+        if (pulse) {
+          effectiveIntensity *= (Math.sin(timeS * pulseSpeed * Math.PI * 2) + 1) / 2;
+        }
+        state.glowColor = glowColor;
+        state.glowRadius = radius;
+        state.glowIntensity = effectiveIntensity;
+        state.glowPasses = passes;
+        break;
+      }
+      case "morph": {
+        // morphProgress driven by lifetime — simple 0→1 over element duration
+        state.morphProgress = localT;
+        break;
+      }
+      case "motion-path": {
+        // motionProgress driven by lifetime — 0→1 over element duration
+        state.motionProgress = localT;
         break;
       }
       case "boil": {
@@ -435,6 +510,13 @@ export function computeEffects(
     letterSpacing: state.letterSpacing,
     textStrokeColor: state.textStrokeColor,
     textStrokeWidth: state.textStrokeWidth,
+    motionProgress: state.motionProgress,
+    morphProgress: state.morphProgress,
+    glowColor: state.glowColor,
+    glowRadius: state.glowRadius,
+    glowIntensity: state.glowIntensity,
+    glowPasses: state.glowPasses,
+    textStagger: state.textStagger,
   };
 }
 

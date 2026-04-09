@@ -10,6 +10,7 @@ import type {
   DocumentSize,
   BackgroundPattern,
   ChartDataPoint,
+  TextSpan,
 } from "@/types/schema";
 import { RenderIcon, legacyNameToLucide } from "@/data/iconLibraries";
 import { resolveMediaSrc } from "@/utils/media";
@@ -64,6 +65,11 @@ function resolveFont(
   if (!fontId) return undefined;
   const font = theme.fonts?.find((f) => f.id === fontId);
   return font?.value;
+}
+
+/** Check if spans array has styled content worth rendering */
+function hasStyledSpans(spans?: TextSpan[]): boolean {
+  return !!spans && spans.length > 0 && spans.some((s) => s.text);
 }
 
 /**
@@ -199,6 +205,9 @@ function ElementRenderer({
             backgroundClip: "text",
           }
         : {};
+
+      const useSpans = hasStyledSpans(el.spans);
+
       return (
         <div
           className={styles.element}
@@ -220,11 +229,38 @@ function ElementRenderer({
             ...spacing,
             ...flexProps,
             ...activeOutline,
-            ...textGradientStyle,
+            ...(!useSpans ? textGradientStyle : {}),
           }}
           onClick={onClick}
         >
-          {el.content || "\u00A0"}
+          {!useSpans
+            ? (el.content || "\u00A0")
+            : el.spans!.map((s, i) => {
+                const spanGradient: React.CSSProperties = s.backgroundGradient
+                  ? {
+                      backgroundImage: s.backgroundGradient,
+                      WebkitBackgroundClip: "text",
+                      WebkitTextFillColor: "transparent",
+                      backgroundClip: "text",
+                    }
+                  : {};
+                return (
+                  <span
+                    key={i}
+                    style={{
+                      color: s.color ? (resolveColor(s.color, theme, slide) ?? s.color) : undefined,
+                      fontWeight: s.fontWeight,
+                      fontStyle: s.fontStyle,
+                      fontSize: s.fontSize,
+                      opacity: s.opacity,
+                      letterSpacing: s.letterSpacing,
+                      ...spanGradient,
+                    }}
+                  >
+                    {s.text}
+                  </span>
+                );
+              })}
         </div>
       );
     }

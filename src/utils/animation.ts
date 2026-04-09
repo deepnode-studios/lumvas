@@ -211,6 +211,25 @@ export interface ComputedElementStyle {
   textStrokeColor?: string;
   /** Animated text stroke (outline) width in px */
   textStrokeWidth?: number;
+  /** Motion path progress 0–1 */
+  motionProgress?: number;
+  /** Path morph progress 0–1 */
+  morphProgress?: number;
+  /** Glow effect state */
+  glowColor?: string;
+  glowRadius?: number;
+  glowIntensity?: number;
+  glowPasses?: number;
+  /** Text stagger animation state — consumed by canvas renderer */
+  textStagger?: {
+    unit: string;
+    staggerMs: number;
+    staggerFrom: string;
+    animation: string;
+    durationMs: number;
+    easing: string;
+    enterMs: number;
+  };
 }
 
 /**
